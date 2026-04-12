@@ -27,12 +27,13 @@ This project implements and benchmarks three pure Python sorting algorithms — 
 3. Integer range and radix sort base are recorded in a `config.py` or equivalent so Phase 2 uses consistent inputs
 4. Each implementation is a self-contained function (no external dependencies)
 
+**Plans:** 3 plans (2 waves)
+
 Plans:
 
-- [ ] 01-01: Design decisions — choose integer range, quicksort variant, radix sort base; document in config
-- [ ] 01-02: Implement merge sort and unit-test against sorted()
-- [ ] 01-03: Implement quicksort and unit-test; verify no RecursionError at N=1M
-- [ ] 01-04: Implement LSD radix sort and unit-test; verify digit extraction handles chosen integer range
+- [ ] 01-01-PLAN.md -- config.py + merge sort implementation + tests (Wave 1)
+- [ ] 01-02-PLAN.md -- quicksort implementation + tests including N=1M stress test (Wave 1, parallel)
+- [ ] 01-03-PLAN.md -- LSD radix sort + comprehensive three-algorithm correctness gate (Wave 2)
 
 ---
 
