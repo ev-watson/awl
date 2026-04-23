@@ -9,6 +9,7 @@ pub enum Phase {
     Execute,
     Verify,
     Complete,
+    NeedsHuman,
 }
 
 impl Phase {
@@ -18,7 +19,7 @@ impl Phase {
             Self::Plan => Some(Self::Execute),
             Self::Execute => Some(Self::Verify),
             Self::Verify => Some(Self::Complete),
-            Self::Complete => None,
+            Self::Complete | Self::NeedsHuman => None,
         }
     }
 
@@ -29,6 +30,7 @@ impl Phase {
             Self::Execute => "Execute",
             Self::Verify => "Verify",
             Self::Complete => "Complete",
+            Self::NeedsHuman => "NeedsHuman",
         }
     }
 }
@@ -40,6 +42,14 @@ pub struct PhaseState {
     pub regression_count: u8,
     pub artifacts: Vec<String>,
     pub phase_notes: HashMap<String, String>,
+    #[serde(default)]
+    pub persona: Option<String>,
+    #[serde(default)]
+    pub goal: Option<String>,
+    #[serde(default)]
+    pub ideas: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
 }
 
 impl PhaseState {
@@ -50,6 +60,10 @@ impl PhaseState {
             regression_count: 0,
             artifacts: Vec::new(),
             phase_notes: HashMap::new(),
+            persona: None,
+            goal: None,
+            ideas: Vec::new(),
+            evidence: Vec::new(),
         }
     }
 
@@ -62,9 +76,11 @@ impl PhaseState {
         }
     }
 
+    const MAX_REGRESSIONS: u8 = 2;
+
     pub fn regress_to_execute(&mut self) -> Result<(), &'static str> {
-        if self.regression_count >= 2 {
-            return Err("max regressions reached (2); task cannot continue");
+        if self.regression_count >= Self::MAX_REGRESSIONS {
+            return Err("max regressions reached; task cannot continue");
         }
         self.current = Phase::Execute;
         self.regression_count += 1;
@@ -96,6 +112,7 @@ If all good, output VERIFY_COMPLETE.
 If issues remain, output VERIFY_FAILED with details."
         }
         Phase::Complete => "Task is complete.",
+        Phase::NeedsHuman => "Task requires human review before continuing.",
     }
 }
 
@@ -104,17 +121,48 @@ pub enum GateSignal {
     Regress,
 }
 
-pub fn detect_gate(output: &str) -> Option<GateSignal> {
-    let upper = output.to_uppercase();
-    if upper.contains("FORMULATE_COMPLETE")
-        || upper.contains("PLAN_COMPLETE")
-        || upper.contains("EXECUTE_COMPLETE")
-        || upper.contains("VERIFY_COMPLETE")
-    {
-        return Some(GateSignal::Advance);
-    }
-    if upper.contains("VERIFY_FAILED") {
-        return Some(GateSignal::Regress);
+pub fn detect_gate(phase: Phase, output: &str) -> Option<GateSignal> {
+    let expected_advance = match phase {
+        Phase::Formulate => Some("FORMULATE_COMPLETE"),
+        Phase::Plan => Some("PLAN_COMPLETE"),
+        Phase::Execute => Some("EXECUTE_COMPLETE"),
+        Phase::Verify => Some("VERIFY_COMPLETE"),
+        Phase::Complete | Phase::NeedsHuman => None,
+    }?;
+    let upper = output.to_ascii_uppercase();
+    for line in upper.lines() {
+        let trimmed = line.trim();
+        if phase == Phase::Verify && trimmed.contains("VERIFY_FAILED") {
+            return Some(GateSignal::Regress);
+        }
+        if trimmed.contains(expected_advance) {
+            return Some(GateSignal::Advance);
+        }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_needs_human_phase() {
+        assert_eq!(Phase::NeedsHuman.name(), "NeedsHuman");
+        assert_eq!(Phase::NeedsHuman.next(), None);
+    }
+
+    #[test]
+    fn test_detect_gate_is_phase_aware() {
+        assert!(matches!(
+            detect_gate(Phase::Formulate, "notes\nFORMULATE_COMPLETE"),
+            Some(GateSignal::Advance)
+        ));
+        assert!(detect_gate(Phase::Formulate, "VERIFY_COMPLETE").is_none());
+        assert!(matches!(
+            detect_gate(Phase::Verify, "result: VERIFY_FAILED due to clippy"),
+            Some(GateSignal::Regress)
+        ));
+        assert!(detect_gate(Phase::Complete, "VERIFY_COMPLETE").is_none());
+    }
 }

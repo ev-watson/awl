@@ -7,6 +7,9 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex;
+use tokio::time::{timeout, Duration};
+
+const MCP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct McpServerConfig {
@@ -88,7 +91,7 @@ impl McpClient {
         let init = json!({
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "claw", "version": env!("CARGO_PKG_VERSION")}
+            "clientInfo": {"name": "awl", "version": env!("CARGO_PKG_VERSION")}
         });
         let _ = client.request("initialize", init).await?;
         client
@@ -162,7 +165,11 @@ impl McpClient {
         if out.is_empty() {
             out = resp.to_string();
         }
-        Ok(out)
+        if resp.get("isError").and_then(Value::as_bool) == Some(true) {
+            Err(format!("mcp tool error from {}: {out}", self.server_name).into())
+        } else {
+            Ok(out)
+        }
     }
 
     async fn notify(&self, method: &str, params: Value) -> Result<(), Box<dyn std::error::Error>> {
@@ -205,7 +212,14 @@ impl McpClient {
         let mut line = String::new();
         loop {
             line.clear();
-            let read = inner.stdout.read_line(&mut line).await?;
+            let read = timeout(MCP_REQUEST_TIMEOUT, inner.stdout.read_line(&mut line))
+                .await
+                .map_err(|_| {
+                    format!(
+                        "timed out waiting for mcp response from {}",
+                        self.server_name
+                    )
+                })??;
             if read == 0 {
                 return Err("mcp server closed stdout".into());
             }

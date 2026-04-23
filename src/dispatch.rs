@@ -3,7 +3,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434/v1";
+use crate::defaults;
+use crate::llm_io::{sanitize_json_strings, strip_code_fences};
+
 const MAX_RETRIES: usize = 3;
 
 #[derive(Debug, Deserialize)]
@@ -38,22 +40,6 @@ struct ChatResponse {
 #[derive(Debug, Deserialize)]
 struct ChatChoice {
     message: ChatMessage,
-}
-
-fn model_for_level(level: u8) -> &'static str {
-    match level {
-        2 => "qwen2.5-coder:7b-instruct-q4_K_M",
-        3 => "qwen2.5-coder:3b-instruct-q4_K_M",
-        _ => unreachable!(),
-    }
-}
-
-fn max_tokens_for_level(level: u8) -> u32 {
-    match level {
-        2 => 8192,
-        3 => 4096,
-        _ => unreachable!(),
-    }
 }
 
 const SYSTEM_PROMPT: &str = "\
@@ -118,11 +104,15 @@ pub fn run_capture(level: u8, input: &str) -> Result<String, Box<dyn std::error:
         .map_err(|e| format!("invalid JSON on stdin: {e}"))?;
 
     let user_message = build_user_message(&spec);
-    let base_url = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| OLLAMA_BASE_URL.to_string());
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let base_url = defaults::configured_ollama_base_url();
+    let url = defaults::ollama_chat_completions_url(&base_url);
+    let model = defaults::model_for_level(level)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    let max_tokens = defaults::max_tokens_for_level(level)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
     let initial_request = ChatRequest {
-        model: model_for_level(level).to_string(),
+        model: model.to_string(),
         messages: vec![
             ChatMessage {
                 role: "system".to_string(),
@@ -133,7 +123,7 @@ pub fn run_capture(level: u8, input: &str) -> Result<String, Box<dyn std::error:
                 content: user_message,
             },
         ],
-        max_tokens: max_tokens_for_level(level),
+        max_tokens,
         temperature: 0.2,
         stream: false,
     };
@@ -249,55 +239,4 @@ async fn send_request(
         .first()
         .map(|c| c.message.content.clone())
         .unwrap_or_default())
-}
-
-/// Escape bare control characters inside JSON string values.
-/// JSON spec forbids literal U+0000–U+001F inside strings, but callers using
-/// `echo '{"context":"multi\nline"}'` produce exactly that.
-fn sanitize_json_strings(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut in_string = false;
-    let mut chars = input.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if in_string {
-            if ch == '\\' {
-                result.push(ch);
-                if let Some(escaped) = chars.next() {
-                    result.push(escaped);
-                }
-            } else if ch == '"' {
-                in_string = false;
-                result.push(ch);
-            } else if ch.is_control() {
-                match ch {
-                    '\n' => result.push_str("\\n"),
-                    '\r' => result.push_str("\\r"),
-                    '\t' => result.push_str("\\t"),
-                    other => result.push_str(&format!("\\u{:04x}", other as u32)),
-                }
-            } else {
-                result.push(ch);
-            }
-        } else {
-            if ch == '"' {
-                in_string = true;
-            }
-            result.push(ch);
-        }
-    }
-
-    result
-}
-
-/// Strip markdown code fences that LLMs commonly wrap around JSON output.
-fn strip_code_fences(text: &str) -> String {
-    let trimmed = text.trim();
-    if let Some(rest) = trimmed.strip_prefix("```") {
-        let after_tag = rest.find('\n').map_or(rest, |pos| &rest[pos + 1..]);
-        let body = after_tag.strip_suffix("```").unwrap_or(after_tag);
-        body.trim().to_string()
-    } else {
-        trimmed.to_string()
-    }
 }

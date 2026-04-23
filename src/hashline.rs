@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
+
+use crate::safety;
 
 /// Alphabet for 2-char hash tags (16 chars → 16² = 256 buckets).
 /// Matches oh-my-pi's convention: visually distinct, no digits, no vowels.
@@ -19,7 +22,8 @@ fn hash_line(content: &str) -> String {
     }
     let hi = ALPHABET[((h >> 4) & 0x0F) as usize];
     let lo = ALPHABET[(h & 0x0F) as usize];
-    String::from_utf8(vec![hi, lo]).unwrap()
+    // ALPHABET contains only ASCII bytes, so this is always valid UTF-8.
+    String::from_utf8(vec![hi, lo]).expect("hash alphabet is ASCII")
 }
 
 /// A single line with its number and hash.
@@ -33,8 +37,9 @@ pub struct HashedLine {
 /// Read a file and return hashline-formatted output.
 /// Format: `LINE:HASH|content`
 pub fn format_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let path = safety::resolve_existing_path(path).map_err(|e| e.clone())?;
     let text =
-        fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     let lines = hash_lines(&text);
     let mut out = String::new();
     for line in &lines {
@@ -165,6 +170,18 @@ fn collect_content<'a>(
     first: &str,
     lines: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
 ) -> String {
+    if let Some(marker) = first.trim().strip_prefix("<<") {
+        let marker = marker.trim();
+        let mut content_lines = Vec::new();
+        for next in lines.by_ref() {
+            if next.trim() == marker {
+                break;
+            }
+            content_lines.push(next);
+        }
+        return content_lines.join("\n");
+    }
+
     let mut content = first.to_string();
     while let Some(next) = lines.peek() {
         let trimmed = next.trim().to_lowercase();
@@ -184,10 +201,12 @@ fn collect_content<'a>(
 /// Apply a sequence of edit operations to a file.
 /// Validates hashes against current file state before applying.
 pub fn apply_edits(path: &Path, ops: &[EditOp]) -> Result<String, Box<dyn std::error::Error>> {
+    let path = safety::resolve_existing_path(path).map_err(|e| e.clone())?;
     let text =
-        fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     let hashed = hash_lines(&text);
     let lookup = build_lookup(&hashed);
+    let had_trailing_newline = text.ends_with('\n');
 
     let mut lines: Vec<Option<String>> = hashed.iter().map(|l| Some(l.content.clone())).collect();
     let mut insertions: Vec<(usize, String)> = Vec::new();
@@ -263,8 +282,51 @@ pub fn apply_edits(path: &Path, ops: &[EditOp]) -> Result<String, Box<dyn std::e
         }
     }
 
-    let result = result_lines.join("\n");
+    let mut result = result_lines.join("\n");
+    if had_trailing_newline {
+        result.push('\n');
+    }
     Ok(result)
+}
+
+fn run_inner(
+    args: &[&str],
+    stdin_input: Option<&str>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    if args.is_empty() {
+        return Err("hashline requires a subcommand: read, apply".into());
+    }
+
+    match args[0] {
+        "read" => {
+            let path = args.get(1).ok_or("hashline read requires a file path")?;
+            format_file(Path::new(path))
+        }
+        "apply" => {
+            let path = args.get(1).ok_or("hashline apply requires a file path")?;
+            let input = if let Some(input) = stdin_input {
+                input.to_string()
+            } else {
+                let mut input = String::new();
+                std::io::stdin().read_to_string(&mut input)?;
+                input
+            };
+            let ops = parse_edits(&input);
+            if ops.is_empty() {
+                return Err("no valid edit operations found in stdin".into());
+            }
+            let result = apply_edits(Path::new(path), &ops)?;
+            let resolved = safety::resolve_existing_path(Path::new(path)).map_err(|e| e.clone())?;
+            fs::write(&resolved, &result)
+                .map_err(|e| format!("cannot write {}: {e}", resolved.display()))?;
+            Ok(format!(
+                "applied {} edit(s) to {}",
+                ops.len(),
+                resolved.display()
+            ))
+        }
+        other => Err(format!("unknown hashline subcommand: {other}").into()),
+    }
 }
 
 /// Resolve an anchor like "5:PZ" to a line index. Validates the hash matches.
@@ -278,39 +340,52 @@ fn resolve_anchor(
     })
 }
 
+pub fn run_capture(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
+    run_inner(args, None)
+}
+
+pub fn apply_from_string(path: &str, edits: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let ops = parse_edits(edits);
+    if ops.is_empty() {
+        return Err("no valid edit operations found in edits".into());
+    }
+    let result = apply_edits(Path::new(path), &ops)?;
+    let resolved = safety::resolve_existing_path(Path::new(path)).map_err(|e| e.clone())?;
+    fs::write(&resolved, &result)
+        .map_err(|e| format!("cannot write {}: {e}", resolved.display()))?;
+    Ok(format!(
+        "applied {} edit(s) to {}",
+        ops.len(),
+        resolved.display()
+    ))
+}
+
 /// Run the hashline subcommand.
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    if args.is_empty() {
-        return Err("hashline requires a subcommand: read, apply".into());
+    let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = run_inner(&borrowed, None)?;
+    if args.first().is_some_and(|arg| arg == "read") {
+        print!("{output}");
+    } else {
+        println!("{output}");
     }
-
-    match args[0].as_str() {
-        "read" => {
-            let path = args.get(1).ok_or("hashline read requires a file path")?;
-            let output = format_file(Path::new(path))?;
-            print!("{output}");
-            Ok(())
-        }
-        "apply" => {
-            let path = args.get(1).ok_or("hashline apply requires a file path")?;
-            let mut input = String::new();
-            std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;
-            let ops = parse_edits(&input);
-            if ops.is_empty() {
-                return Err("no valid edit operations found in stdin".into());
-            }
-            let result = apply_edits(Path::new(path), &ops)?;
-            fs::write(path, &result).map_err(|e| format!("cannot write {path}: {e}"))?;
-            println!("applied {} edit(s) to {path}", ops.len());
-            Ok(())
-        }
-        other => Err(format!("unknown hashline subcommand: {other}").into()),
-    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_file_path(name: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock drift")
+            .as_nanos();
+        std::env::current_dir()
+            .expect("workspace cwd")
+            .join(format!("awl-hashline-{name}-{nanos}.txt"))
+    }
 
     #[test]
     fn hash_deterministic() {
@@ -375,5 +450,33 @@ mod tests {
         assert!(
             matches!(&ops[0], EditOp::DeleteRange { start, end } if start == "2:AB" && end == "4:CD")
         );
+    }
+
+    #[test]
+    fn parse_replace_line_with_heredoc() {
+        let input = "replace 2:XY with <<EOF\nreplace literal text\nEOF";
+        let ops = parse_edits(input);
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(
+            &ops[0],
+            EditOp::ReplaceLine { new_content, .. } if new_content == "replace literal text"
+        ));
+    }
+
+    #[test]
+    fn apply_edits_preserves_trailing_newline() {
+        let path = temp_file_path("newline");
+        fs::write(&path, "alpha\nbeta\n").expect("write fixture");
+        let lines = hash_lines("alpha\nbeta\n");
+        let anchor = format!("2:{}", lines[1].hash);
+        let ops = vec![EditOp::ReplaceLine {
+            anchor,
+            new_content: "gamma".to_string(),
+        }];
+
+        let result = apply_edits(&path, &ops).expect("apply edits");
+        assert_eq!(result, "alpha\ngamma\n");
+
+        fs::remove_file(path).expect("cleanup");
     }
 }

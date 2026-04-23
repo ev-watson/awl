@@ -1,28 +1,30 @@
 [package]
-name = "claw"
-version = "0.1.0"
+name = "awl"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
-publish = false
-description = "Local agentic coding dispatch CLI for Ollama-hosted models"
+description = "Local agentic coding CLI — autonomous agent with tool use, phase discipline, and session persistence for Ollama-hosted models"
+authors = ["Evan Watson <etwatson@ucsd.edu>"]
+repository = "https://github.com/etwatson/awl"
+keywords = ["agent", "coding", "ollama", "cli", "autonomous"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
 
 [[bin]]
-name = "claw"
+name = "awl"
 path = "src/main.rs"
 
 [dependencies]
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "process", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "process", "sync", "time"] }
 tree-sitter = "0.24"
 tree-sitter-python = "0.23"
 tree-sitter-rust = "0.23"
 petgraph = "0.6"
-rmcp = { version = "0.16", features = ["client", "transport-child-process"] }
 glob = "0.3"
 walkdir = "2.5"
-regex = "1"
 rand = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 async-trait = "0.1"

@@ -12,13 +12,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tree_sitter::{Node, Parser, Tree};
 
+use crate::defaults;
+use crate::safety;
+
 /// A code symbol extracted from a source file.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Symbol {
     pub name: String,
     pub kind: SymbolKind,
-    pub file: PathBuf,
     pub line: usize,
     pub signature: String,
 }
@@ -38,10 +39,8 @@ pub struct Reference {
     pub kind: RefKind,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum RefKind {
-    Call,
     Import,
 }
 
@@ -85,6 +84,12 @@ fn scan_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
         let path = entry.path();
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
 
         // Skip hidden dirs, target/, __pycache__, .git, node_modules
         if name_str.starts_with('.')
@@ -114,14 +119,14 @@ fn extract_symbols(path: &Path, source: &str, tree: &Tree) -> Vec<Symbol> {
     let mut symbols = Vec::new();
 
     match lang {
-        Lang::Python => extract_python_symbols(path, source, root, &mut symbols),
-        Lang::Rust => extract_rust_symbols(path, source, root, &mut symbols),
+        Lang::Python => extract_python_symbols(source, root, &mut symbols),
+        Lang::Rust => extract_rust_symbols(source, root, &mut symbols),
     }
 
     symbols
 }
 
-fn extract_python_symbols(path: &Path, source: &str, node: Node, symbols: &mut Vec<Symbol>) {
+fn extract_python_symbols(source: &str, node: Node, symbols: &mut Vec<Symbol>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -132,7 +137,7 @@ fn extract_python_symbols(path: &Path, source: &str, node: Node, symbols: &mut V
                     symbols.push(Symbol {
                         name,
                         kind: SymbolKind::Function,
-                        file: path.to_path_buf(),
+
                         line: child.start_position().row + 1,
                         signature: sig,
                     });
@@ -145,7 +150,7 @@ fn extract_python_symbols(path: &Path, source: &str, node: Node, symbols: &mut V
                     symbols.push(Symbol {
                         name: name.clone(),
                         kind: SymbolKind::Class,
-                        file: path.to_path_buf(),
+
                         line: child.start_position().row + 1,
                         signature: sig,
                     });
@@ -160,7 +165,7 @@ fn extract_python_symbols(path: &Path, source: &str, node: Node, symbols: &mut V
                                     symbols.push(Symbol {
                                         name: format!("{name}.{mname}"),
                                         kind: SymbolKind::Method,
-                                        file: path.to_path_buf(),
+
                                         line: method.start_position().row + 1,
                                         signature: msig.trim().to_string(),
                                     });
@@ -175,20 +180,20 @@ fn extract_python_symbols(path: &Path, source: &str, node: Node, symbols: &mut V
                 symbols.push(Symbol {
                     name: sig.clone(),
                     kind: SymbolKind::Import,
-                    file: path.to_path_buf(),
+
                     line: child.start_position().row + 1,
                     signature: sig,
                 });
             }
             _ => {
                 // Recurse into compound statements
-                extract_python_symbols(path, source, child, symbols);
+                extract_python_symbols(source, child, symbols);
             }
         }
     }
 }
 
-fn extract_rust_symbols(path: &Path, source: &str, node: Node, symbols: &mut Vec<Symbol>) {
+fn extract_rust_symbols(source: &str, node: Node, symbols: &mut Vec<Symbol>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -199,7 +204,7 @@ fn extract_rust_symbols(path: &Path, source: &str, node: Node, symbols: &mut Vec
                     symbols.push(Symbol {
                         name,
                         kind: SymbolKind::Function,
-                        file: path.to_path_buf(),
+
                         line: child.start_position().row + 1,
                         signature: sig,
                     });
@@ -212,7 +217,7 @@ fn extract_rust_symbols(path: &Path, source: &str, node: Node, symbols: &mut Vec
                     symbols.push(Symbol {
                         name,
                         kind: SymbolKind::Class,
-                        file: path.to_path_buf(),
+
                         line: child.start_position().row + 1,
                         signature: sig,
                     });
@@ -234,7 +239,7 @@ fn extract_rust_symbols(path: &Path, source: &str, node: Node, symbols: &mut Vec
                                 symbols.push(Symbol {
                                     name: format!("{impl_name}::{mname}"),
                                     kind: SymbolKind::Method,
-                                    file: path.to_path_buf(),
+
                                     line: item.start_position().row + 1,
                                     signature: msig,
                                 });
@@ -248,7 +253,7 @@ fn extract_rust_symbols(path: &Path, source: &str, node: Node, symbols: &mut Vec
                 symbols.push(Symbol {
                     name: sig.clone(),
                     kind: SymbolKind::Import,
-                    file: path.to_path_buf(),
+
                     line: child.start_position().row + 1,
                     signature: sig,
                 });
@@ -256,7 +261,7 @@ fn extract_rust_symbols(path: &Path, source: &str, node: Node, symbols: &mut Vec
             "mod_item" => {
                 // Recurse into inline module definitions
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_rust_symbols(path, source, body, symbols);
+                    extract_rust_symbols(source, body, symbols);
                 }
             }
             _ => {}
@@ -313,22 +318,18 @@ fn build_graph(
     for (i, (path_i, sym_i)) in flat.iter().enumerate() {
         if sym_i.kind == SymbolKind::Import {
             // Import references: link to any matching definition
-            for (j, (path_j, _sym_j)) in flat.iter().enumerate() {
-                if i != j && path_i != path_j {
-                    let imported_name = sym_i.name.rsplit(' ').next().unwrap_or(&sym_i.name);
-                    let imported_name = imported_name.rsplit("::").next().unwrap_or(imported_name);
-                    if let Some(targets) = name_to_nodes.get(imported_name) {
-                        for &t in targets {
-                            if t != i && flat[t].0 != *path_i {
-                                graph.add_edge(
-                                    node_indices[i],
-                                    node_indices[t],
-                                    Reference {
-                                        kind: RefKind::Import,
-                                    },
-                                );
-                            }
-                        }
+            let imported_name = sym_i.name.rsplit(' ').next().unwrap_or(&sym_i.name);
+            let imported_name = imported_name.rsplit("::").next().unwrap_or(imported_name);
+            if let Some(targets) = name_to_nodes.get(imported_name) {
+                for &t in targets {
+                    if t != i && flat[t].0 != *path_i {
+                        graph.add_edge(
+                            node_indices[i],
+                            node_indices[t],
+                            Reference {
+                                kind: RefKind::Import,
+                            },
+                        );
                     }
                 }
             }
@@ -463,22 +464,18 @@ fn render_map(flat: &[(PathBuf, Symbol)], scores: &[f64], root: &Path, budget: u
     output
 }
 
-/// Generate a repo map string for the given path, budget, and focus files.
-/// Used by the agent tool registry — same logic as `run` but returns a String.
-pub fn generate(
-    root: &Path,
-    budget: usize,
-    focus: &[PathBuf],
-) -> Result<String, Box<dyn std::error::Error>> {
-    let canonical = fs::canonicalize(root)
-        .map_err(|e| format!("cannot resolve path {}: {e}", root.display()))?;
+type SymbolGraph = DiGraph<usize, Reference>;
+type FlatSymbols = Vec<(PathBuf, Symbol)>;
+type RepoAnalysis = (PathBuf, Vec<PathBuf>, SymbolGraph, FlatSymbols, Vec<f64>);
 
+fn analyze_repository(
+    root: &Path,
+    focus: &[PathBuf],
+) -> Result<RepoAnalysis, Box<dyn std::error::Error>> {
+    let canonical = safety::resolve_existing_directory(root).map_err(|e| e.clone())?;
     let files = scan_directory(&canonical);
     if files.is_empty() {
-        return Ok(format!(
-            "# Repository Map\n\nNo supported source files found in {}",
-            canonical.display()
-        ));
+        return Ok((canonical, files, DiGraph::new(), Vec::new(), Vec::new()));
     }
 
     let mut all_symbols: Vec<(PathBuf, Vec<Symbol>)> = Vec::new();
@@ -500,13 +497,30 @@ pub fn generate(
 
     let (graph, flat) = build_graph(&all_symbols);
     let scores = pagerank(&graph, flat.len(), focus, &flat, 20, 0.85);
+    Ok((canonical, files, graph, flat, scores))
+}
+
+/// Generate a repo map string for the given path, budget, and focus files.
+/// Used by the agent tool registry — same logic as `run` but returns a String.
+pub fn generate(
+    root: &Path,
+    budget: usize,
+    focus: &[PathBuf],
+) -> Result<String, Box<dyn std::error::Error>> {
+    let (canonical, files, _graph, flat, scores) = analyze_repository(root, focus)?;
+    if files.is_empty() {
+        return Ok(format!(
+            "# Repository Map\n\nNo supported source files found in {}",
+            canonical.display()
+        ));
+    }
     Ok(render_map(&flat, &scores, &canonical, budget))
 }
 
 /// Run the repomap subcommand.
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut path = PathBuf::from(".");
-    let mut budget: usize = 4096;
+    let mut budget: usize = defaults::DEFAULT_REPOMAP_BUDGET;
     let mut focus: Vec<PathBuf> = Vec::new();
 
     let mut i = 0;
@@ -538,10 +552,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         i += 1;
     }
 
-    let canonical = fs::canonicalize(&path)
-        .map_err(|e| format!("cannot resolve path {}: {e}", path.display()))?;
-
-    let files = scan_directory(&canonical);
+    let (canonical, files, _graph, flat, scores) = analyze_repository(&path, &focus)?;
     if files.is_empty() {
         println!(
             "# Repository Map\n\nNo supported source files found in {}",
@@ -549,28 +560,6 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
-
-    // Parse all files.
-    let mut all_symbols: Vec<(PathBuf, Vec<Symbol>)> = Vec::new();
-    for file in &files {
-        let lang = match detect_language(file) {
-            Some(l) => l,
-            None => continue,
-        };
-        let mut parser = create_parser(&lang)?;
-        let source =
-            fs::read_to_string(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
-        if let Some(tree) = parser.parse(&source, None) {
-            let symbols = extract_symbols(file, &source, &tree);
-            if !symbols.is_empty() {
-                all_symbols.push((file.clone(), symbols));
-            }
-        }
-    }
-
-    // Build graph and rank.
-    let (graph, flat) = build_graph(&all_symbols);
-    let scores = pagerank(&graph, flat.len(), &focus, &flat, 20, 0.85);
 
     // Render and print.
     let output = render_map(&flat, &scores, &canonical, budget);
@@ -584,4 +573,45 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn import_edges_are_not_duplicated_by_unrelated_symbols() {
+        let all_symbols = vec![
+            (
+                PathBuf::from("a.rs"),
+                vec![Symbol {
+                    name: "use crate::Thing".to_string(),
+                    kind: SymbolKind::Import,
+                    line: 1,
+                    signature: "use crate::Thing;".to_string(),
+                }],
+            ),
+            (
+                PathBuf::from("b.rs"),
+                vec![Symbol {
+                    name: "Thing".to_string(),
+                    kind: SymbolKind::Class,
+                    line: 1,
+                    signature: "struct Thing;".to_string(),
+                }],
+            ),
+            (
+                PathBuf::from("c.rs"),
+                vec![Symbol {
+                    name: "Irrelevant".to_string(),
+                    kind: SymbolKind::Function,
+                    line: 1,
+                    signature: "fn irrelevant() {}".to_string(),
+                }],
+            ),
+        ];
+
+        let (graph, _flat) = build_graph(&all_symbols);
+        assert_eq!(graph.edge_count(), 1);
+    }
 }

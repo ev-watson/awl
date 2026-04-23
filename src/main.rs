@@ -2,12 +2,17 @@ use std::io::{self, Read};
 use std::process;
 
 mod agent;
+mod defaults;
 mod dispatch;
+mod doctor;
 mod hashline;
+mod llm_io;
 mod mcp_client;
+mod mcp_server;
 mod phases;
 mod plan;
 mod repomap;
+mod safety;
 mod session;
 mod tools;
 
@@ -37,15 +42,61 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "repomap" => repomap::run(&args[1..]),
         "plan" => plan::run(&args[1..]),
         "agent" => agent::run_agent_cli(&args[1..]),
+        "serve" => mcp_server::run_server(),
+        "doctor" => {
+            println!("awl doctor — health checks\n");
+            doctor::run()
+        }
+        "sessions" => run_sessions(&args[1..]),
         "--help" | "-h" | "help" => {
             print_usage();
             Ok(())
         }
         "--version" | "-V" => {
-            println!("claw {}", env!("CARGO_PKG_VERSION"));
+            println!("awl {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        other => Err(format!("unknown subcommand: {other}\n\nRun `claw --help` for usage.").into()),
+        other => Err(format!("unknown subcommand: {other}\n\nRun `awl --help` for usage.").into()),
+    }
+}
+
+fn run_sessions(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if args.is_empty() || args[0] == "--list" {
+        let sessions = session::list_sessions()?;
+        if sessions.is_empty() {
+            println!("no sessions found");
+        } else {
+            println!("{:<45} {:>8}  MODIFIED", "SESSION ID", "SIZE");
+            for s in &sessions {
+                let age = s.modified.elapsed().map_or_else(
+                    |_| "unknown".to_string(),
+                    |d| format!("{}d ago", d.as_secs() / 86400),
+                );
+                let size = if s.size_bytes > 1024 {
+                    format!("{}K", s.size_bytes / 1024)
+                } else {
+                    format!("{}B", s.size_bytes)
+                };
+                println!("{:<45} {:>8}  {}", s.id, size, age);
+            }
+            println!("\n{} session(s)", sessions.len());
+        }
+        Ok(())
+    } else if args[0] == "--prune" {
+        let days: u64 = args
+            .get(1)
+            .ok_or("--prune requires a number of days (e.g., `awl sessions --prune 30`)")?
+            .parse()
+            .map_err(|_| "--prune value must be a positive integer (days)")?;
+        let deleted = session::prune_sessions(days)?;
+        println!("deleted {deleted} session(s) older than {days} days");
+        Ok(())
+    } else {
+        Err(format!(
+            "unknown sessions flag: {}\n\nUsage:\n  awl sessions [--list]\n  awl sessions --prune <days>",
+            args[0]
+        )
+        .into())
     }
 }
 
@@ -67,43 +118,58 @@ fn parse_dispatch_level(args: &[String]) -> Result<u8, Box<dyn std::error::Error
 
 fn print_usage() {
     println!(
-        "claw — local agentic coding dispatch CLI
+        "awl {} — local agentic coding dispatch CLI
 
 USAGE:
-    claw dispatch --level {{2,3}} < task.json
-    claw hashline read <file>
-    claw hashline apply <file> < edits
-    claw repomap [--path .] [--budget 4096] [--focus file.rs]
-    claw plan [--level 2] < task.json
-    claw agent --task \"description\" [--offline] [--model name] [--mcp-config file] [--resume id]
-    claw --version
-    claw --help
+    awl <subcommand> [options]
 
 SUBCOMMANDS:
     dispatch    Send a task to a local Ollama model
                 --level 2  Qwen2.5-Coder 7B (implementation)
                 --level 3  Qwen2.5-Coder 3B (verification)
+                Reads JSON task from stdin.
+
     hashline    Content-hashed line references for stable edits
                 read <file>   Display file with LINE:HASH|content tags
                 apply <file>  Apply edit operations from stdin
+
     repomap     PageRank-ranked code map for codebase context
                 --path .      Root directory to scan (default: cwd)
-                --budget 4096 Max output tokens (default: 4096)
+                --budget {default_budget} Max output tokens (default: {default_budget})
                 --focus f.rs  Comma-separated files to prioritize
-    plan        Ask Level 2/3 to decompose a task into an implementation plan
-                --level 2     Model to use for planning (default: 2)
-    agent       Offline tool-use agent loop with phase discipline
-                --task \"desc\"        Task description
-                --offline             Print offline-mode warning
-                --model <name>        Override model (default: qwen2.5-coder:14b)
-                --mcp-config <path>   MCP server config file
-                --resume <session-id> Resume a session log
 
-STDIN FORMAT (dispatch/plan, JSON):
+    plan        Ask Level 2/3 to decompose a task into a plan
+                --level 2     Model to use for planning (default: 2)
+                Reads JSON task from stdin.
+
+    agent       Tool-use agent loop with phase discipline
+                --task \"desc\"        Task description (or pipe via stdin)
+                --persona \"...\"      Domain expertise framing
+                --goal \"...\"         Explicit research goal
+                --idea \"...\"         User hypothesis (repeatable)
+                --model <name>        Override model (default: {default_model})
+                --mcp-config <path>   MCP server config file
+                --resume <session-id> Resume a saved session
+
+    serve       Start MCP server on stdio (for Claude Code integration)
+
+    doctor      Run health checks (Ollama, models, sessions, workspace)
+
+    sessions    Manage session logs
+                --list                List all sessions (default)
+                --prune <days>        Delete sessions older than N days
+
+    --version   Print version
+    --help      Print this help
+
+STDIN FORMAT (dispatch/plan):
     {{
         \"task\": \"description of what to do\",
         \"context\": \"optional relevant code or context\",
         \"constraints\": [\"optional\", \"constraint\", \"list\"]
-    }}"
+    }}",
+        env!("CARGO_PKG_VERSION"),
+        default_budget = crate::defaults::DEFAULT_REPOMAP_BUDGET,
+        default_model = crate::defaults::DEFAULT_AGENT_MODEL,
     );
 }

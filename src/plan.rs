@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434/v1";
+use crate::defaults;
+use crate::llm_io::{sanitize_json_strings, strip_code_fences};
 
 #[derive(Debug, Deserialize)]
 struct PlanSpec {
@@ -54,51 +55,6 @@ Respond with ONLY a JSON object containing:
 Order steps by dependency. Keep plans to 3-8 steps. \
 Respond ONLY with valid JSON. No markdown fences, no text outside the JSON.";
 
-fn strip_code_fences(text: &str) -> String {
-    let trimmed = text.trim();
-    if let Some(rest) = trimmed.strip_prefix("```") {
-        let after_tag = rest.find('\n').map_or(rest, |pos| &rest[pos + 1..]);
-        let body = after_tag.strip_suffix("```").unwrap_or(after_tag);
-        body.trim().to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-fn sanitize_json_strings(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut in_string = false;
-    let mut chars = input.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if in_string {
-            if ch == '\\' {
-                result.push(ch);
-                if let Some(e) = chars.next() {
-                    result.push(e);
-                }
-            } else if ch == '"' {
-                in_string = false;
-                result.push(ch);
-            } else if ch.is_control() {
-                match ch {
-                    '\n' => result.push_str("\\n"),
-                    '\r' => result.push_str("\\r"),
-                    '\t' => result.push_str("\\t"),
-                    o => result.push_str(&format!("\\u{:04x}", o as u32)),
-                }
-            } else {
-                result.push(ch);
-            }
-        } else {
-            if ch == '"' {
-                in_string = true;
-            }
-            result.push(ch);
-        }
-    }
-    result
-}
-
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // Parse --level flag (default 2).
     let level: u8 = args
@@ -112,11 +68,8 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Err("plan --level must be 2 or 3".into());
     }
 
-    let model = match level {
-        2 => "qwen2.5-coder:7b-instruct-q4_K_M",
-        3 => "qwen2.5-coder:3b-instruct-q4_K_M",
-        _ => unreachable!(),
-    };
+    let model = defaults::model_for_level(level)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
     let mut input = String::new();
     std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;
@@ -133,8 +86,8 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         user_msg.push_str(&format!("\n\nCodebase context:\n{}", spec.context));
     }
 
-    let base_url = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| OLLAMA_BASE_URL.to_string());
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let base_url = defaults::configured_ollama_base_url();
+    let url = defaults::ollama_chat_completions_url(&base_url);
 
     let request = ChatRequest {
         model: model.to_string(),
