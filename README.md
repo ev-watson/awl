@@ -12,7 +12,7 @@ Formulate → Plan → Execute → Verify → Complete
                       └── (on failure) ←──┘
 ```
 
-During each phase, the agent has access to 8 built-in tools (file I/O, shell execution, search, code map, subtask dispatch) and can connect to external tools via [MCP](https://modelcontextprotocol.io). Session state is persisted to JSONL so interrupted work can be resumed.
+During each phase, the agent has access to 9 built-in tools (file I/O, shell execution, search, code map, subtask dispatch, and edit undo) and can connect to external tools via [MCP](https://modelcontextprotocol.io). Session state is persisted to JSONL so interrupted work can be resumed.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ When online, Claude or any upstream orchestrator can invoke Awl as an MCP server
 ## Features
 
 - **Phase-disciplined agent loop** with gate signals, evidence extraction, and automatic regression on verification failure
-- **8 built-in tools**: `bash`, `read_file`, `write_file`, `edit_file`, `search_files`, `list_files`, `repomap`, `dispatch`
+- **9 built-in tools**: `bash`, `read_file`, `write_file`, `edit_file`, `search_files`, `list_files`, `repomap`, `dispatch`, `undo_edit`
 - **PageRank-ranked code map** via tree-sitter AST parsing — token-budgeted codebase context
 - **Hashline edit format** — content-hashed line references for stable, conflict-resistant file edits
 - **Session persistence** — JSONL logs with full conversation replay and `--resume` support

@@ -40,7 +40,7 @@ Read modules bottom-up — leaf modules first, then composites.
 - `plan.rs` (152 LOC) — task decomposition, depends on `llm_io`
 
 **Composite modules** (depend on multiple mid-level modules):
-- `tools.rs` (675 LOC) — tool trait, registry, 8 implementations. Depends on `safety`, `mcp_client`
+- `tools.rs` (675 LOC) — tool trait, registry, 8 registered implementations plus `undo_edit`. Depends on `safety`, `mcp_client`
 - `agent.rs` (823 LOC) — core agent loop. Depends on `phases`, `tools`, `session`, `mcp_client`
 - `mcp_server.rs` (399 LOC) — JSON-RPC server. Depends on `agent`, `phases`, `session`
 
@@ -284,7 +284,7 @@ For a first-pass review of the entire codebase, this order minimizes context-swi
 
 4. **`session.rs`** (192 LOC) — Persistence layer. Understand how state is saved/restored.
 
-5. **`tools.rs`** (675 LOC) — Tool trait and all 8 implementations. This is where the agent's capabilities are defined. Review the `BashTool` and `WriteFileTool` implementations carefully (security-critical).
+5. **`tools.rs`** (675 LOC) — Tool trait and the agent tool surface, including 8 registered implementations plus `undo_edit`. This is where the agent's capabilities are defined. Review the `BashTool` and `WriteFileTool` implementations carefully (security-critical).
 
 6. **`agent.rs`** (823 LOC) — The core loop. Read `build_system_prompt` first (line 348), then `run_agent` (line 38). This is the longest file and the most complex.
 
