@@ -31,6 +31,16 @@ cargo test
 cargo package --no-verify --list
 ```
 
+## Pull Requests
+
+- Open a pull request against `main`.
+- Keep changes scoped and explain user-facing effects clearly.
+- Include reproduction steps for bug fixes.
+- Update `README.md` when install, config, or command behavior changes.
+- Expect CI to pass before merge.
+
+If you are changing command-line behavior, configuration resolution, or safety boundaries, explain the tradeoff in the pull request description.
+
 ## Scope
 
 - Keep changes local-first. Awl should remain usable without cloud dependencies.

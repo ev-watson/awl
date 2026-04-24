@@ -182,7 +182,9 @@ cargo test
 cargo package --no-verify --list
 ```
 
-See [CONTRIBUTING.md](https://github.com/ev-watson/awl/blob/main/CONTRIBUTING.md), [CHANGELOG.md](https://github.com/ev-watson/awl/blob/main/CHANGELOG.md), and [SECURITY.md](https://github.com/ev-watson/awl/blob/main/SECURITY.md) for repo policy and release details.
+The repository includes issue templates, a pull request template, and code ownership for the public contribution path.
+
+See [CONTRIBUTING.md](https://github.com/ev-watson/awl/blob/main/CONTRIBUTING.md), [CODE_OF_CONDUCT.md](https://github.com/ev-watson/awl/blob/main/CODE_OF_CONDUCT.md), [CHANGELOG.md](https://github.com/ev-watson/awl/blob/main/CHANGELOG.md), and [SECURITY.md](https://github.com/ev-watson/awl/blob/main/SECURITY.md) for repo policy and release details.
 
 ## License
 

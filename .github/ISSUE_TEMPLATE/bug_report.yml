@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem in Awl.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please include a small reproduction and the exact command you ran.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Steps, commands, and inputs needed to reproduce the problem.
+      placeholder: |
+        1. Run `...`
+        2. Execute `...`
+        3. Observe `...`
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Awl version, Rust version if built from source, Ollama version, and model names.
+      placeholder: |
+        OS:
+        awl --version:
+        ollama --version:
+        model(s):
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Paste the most relevant command output, traceback, or error text.
+      render: shell
