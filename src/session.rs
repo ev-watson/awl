@@ -160,7 +160,7 @@ pub fn list_sessions() -> Result<Vec<SessionInfo>, Box<dyn std::error::Error>> {
             modified: meta.modified()?,
         });
     }
-    sessions.sort_by(|a, b| b.modified.cmp(&a.modified));
+    sessions.sort_by_key(|entry| std::cmp::Reverse(entry.modified));
     Ok(sessions)
 }
 
