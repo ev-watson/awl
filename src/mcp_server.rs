@@ -33,6 +33,7 @@ impl JsonRpcError {
 }
 
 fn server_tool_definitions() -> Vec<Value> {
+    let agent_model = defaults::configured_agent_model();
     vec![
         json!({
             "name": "awl_dispatch",
@@ -91,9 +92,9 @@ fn server_tool_definitions() -> Vec<Value> {
                         "type": "string",
                         "description": format!(
                             "Ollama model name (default: {})",
-                            defaults::DEFAULT_AGENT_MODEL
+                            agent_model
                         ),
-                        "default": defaults::DEFAULT_AGENT_MODEL
+                        "default": agent_model
                     },
                     "mcp_config": {"type": "string", "description": "Path to MCP server config JSON for the agent to use"}
                 },
@@ -199,9 +200,10 @@ fn execute_hashline(args: &Value) -> Result<String, String> {
 
 fn execute_agent(args: &Value) -> Result<String, String> {
     let task = required_string(args, "task")?;
-    let model =
-        optional_string(args, "model").unwrap_or_else(|| defaults::DEFAULT_AGENT_MODEL.to_string());
-    let mcp_config_path = optional_string(args, "mcp_config").map(PathBuf::from);
+    let model = optional_string(args, "model").unwrap_or_else(defaults::configured_agent_model);
+    let mcp_config_path = optional_string(args, "mcp_config")
+        .map(PathBuf::from)
+        .or_else(defaults::configured_mcp_config_path);
     let config = AgentConfig {
         model,
         mcp_config_path,

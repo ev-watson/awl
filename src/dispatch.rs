@@ -106,13 +106,13 @@ pub fn run_capture(level: u8, input: &str) -> Result<String, Box<dyn std::error:
     let user_message = build_user_message(&spec);
     let base_url = defaults::configured_ollama_base_url();
     let url = defaults::ollama_chat_completions_url(&base_url);
-    let model = defaults::model_for_level(level)
+    let model = defaults::configured_model_for_level(level)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
     let max_tokens = defaults::max_tokens_for_level(level)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
     let initial_request = ChatRequest {
-        model: model.to_string(),
+        model: model.clone(),
         messages: vec![
             ChatMessage {
                 role: "system".to_string(),

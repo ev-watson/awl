@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use rand::Rng;
 use serde_json::Value;
 
+use crate::config;
 use crate::phases::PhaseState;
 
 /// Metadata header prefix — first line of the JSONL log.
@@ -126,10 +127,7 @@ impl Session {
 }
 
 fn session_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let home = std::env::var("HOME")?;
-    let mut dir = PathBuf::from(home);
-    dir.push(".config/awl/sessions");
-    Ok(dir)
+    config::configured_sessions_dir()
 }
 
 /// Information about a stored session file.

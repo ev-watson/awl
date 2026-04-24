@@ -1,14 +1,16 @@
 [package]
 name = "awl"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
-description = "Local agentic coding CLI — autonomous agent with tool use, phase discipline, and session persistence for Ollama-hosted models"
+description = "Local agentic coding CLI for Ollama-hosted models with tool use, phase discipline, and resumable sessions"
 authors = ["Evan Watson <etwatson@ucsd.edu>"]
-repository = "https://github.com/etwatson/awl"
+repository = "https://github.com/ev-watson/awl"
+homepage = "https://github.com/ev-watson/awl"
 keywords = ["agent", "coding", "ollama", "cli", "autonomous"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
+include = ["src/**/*", "README.md", "LICENSE", "Cargo.toml", "Cargo.lock", "vault.sh"]
 
 [[bin]]
 name = "awl"

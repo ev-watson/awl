@@ -23,12 +23,12 @@ pub struct AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            model: defaults::DEFAULT_AGENT_MODEL.to_string(),
+            model: defaults::configured_agent_model(),
             base_url: defaults::configured_ollama_base_url(),
             max_tokens: 4096,
             max_iterations: 30,
             temperature: 0.2,
-            mcp_config_path: None,
+            mcp_config_path: defaults::configured_mcp_config_path(),
         }
     }
 }
@@ -392,7 +392,7 @@ so it can be preserved across session compaction.",
 pub fn run_agent_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut task = String::new();
     let mut resume_id: Option<String> = None;
-    let mut model = defaults::DEFAULT_AGENT_MODEL.to_string();
+    let mut model = defaults::configured_agent_model();
     let mut mcp_config: Option<PathBuf> = None;
     let mut persona: Option<String> = None;
     let mut goal: Option<String> = None;
@@ -447,7 +447,7 @@ pub fn run_agent_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     }
     let config = AgentConfig {
         model,
-        mcp_config_path: mcp_config,
+        mcp_config_path: mcp_config.or_else(defaults::configured_mcp_config_path),
         ..Default::default()
     };
 

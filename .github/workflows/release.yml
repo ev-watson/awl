@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package release archive
+        shell: bash
+        run: |
+          staging="dist/${{ matrix.target }}"
+          mkdir -p "$staging"
+          cp "target/${{ matrix.target }}/release/awl" "$staging/awl"
+          cp README.md LICENSE vault.sh "$staging/"
+          chmod +x "$staging/awl" "$staging/vault.sh"
+          tar -czf "awl-${{ matrix.target }}.tar.gz" -C "$staging" awl README.md LICENSE vault.sh
+          shasum -a 256 "awl-${{ matrix.target }}.tar.gz" | awk '{print $1}' > "awl-${{ matrix.target }}.tar.gz.sha256"
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: awl-${{ matrix.target }}
+          path: |
+            awl-${{ matrix.target }}.tar.gz
+            awl-${{ matrix.target }}.tar.gz.sha256
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-artifacts/**/*.tar.gz
+          generate_release_notes: true

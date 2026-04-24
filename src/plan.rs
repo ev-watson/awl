@@ -68,7 +68,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Err("plan --level must be 2 or 3".into());
     }
 
-    let model = defaults::model_for_level(level)
+    let model = defaults::configured_model_for_level(level)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
     let mut input = String::new();
@@ -90,7 +90,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let url = defaults::ollama_chat_completions_url(&base_url);
 
     let request = ChatRequest {
-        model: model.to_string(),
+        model,
         messages: vec![
             ChatMessage {
                 role: "system".to_string(),

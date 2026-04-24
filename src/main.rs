@@ -2,10 +2,12 @@ use std::io::{self, Read};
 use std::process;
 
 mod agent;
+mod config;
 mod defaults;
 mod dispatch;
 mod doctor;
 mod hashline;
+mod init;
 mod llm_io;
 mod mcp_client;
 mod mcp_server;
@@ -42,6 +44,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "repomap" => repomap::run(&args[1..]),
         "plan" => plan::run(&args[1..]),
         "agent" => agent::run_agent_cli(&args[1..]),
+        "init" => init::run(&args[1..]),
+        "config" => config::run_cli(&args[1..]),
         "serve" => mcp_server::run_server(),
         "doctor" => {
             println!("awl doctor — health checks\n");
@@ -138,6 +142,20 @@ SUBCOMMANDS:
                 --budget {default_budget} Max output tokens (default: {default_budget})
                 --focus f.rs  Comma-separated files to prioritize
 
+    init        Create or update the user config file
+                --profile default|lite
+                --base-url <url>
+                --agent-model <name>
+                --implementation-model <name>
+                --verification-model <name>
+                --sessions-dir <path>
+                --mcp-config <path>
+                --no-check          Skip post-init health checks
+
+    config      Inspect saved configuration
+                show                Print current config file contents (default)
+                path                Print config file path
+
     plan        Ask Level 2/3 to decompose a task into a plan
                 --level 2     Model to use for planning (default: 2)
                 Reads JSON task from stdin.
@@ -170,6 +188,6 @@ STDIN FORMAT (dispatch/plan):
     }}",
         env!("CARGO_PKG_VERSION"),
         default_budget = crate::defaults::DEFAULT_REPOMAP_BUDGET,
-        default_model = crate::defaults::DEFAULT_AGENT_MODEL,
+        default_model = crate::defaults::configured_agent_model(),
     );
 }
