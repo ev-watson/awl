@@ -2,7 +2,6 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
-use rand::Rng;
 use serde_json::Value;
 
 use crate::config;
@@ -25,12 +24,11 @@ pub struct ResumedSession {
 
 impl Session {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let mut rng = rand::thread_rng();
         let dir = session_dir()?;
         fs::create_dir_all(&dir)?;
 
         for _ in 0..16 {
-            let suffix: u32 = rng.gen();
+            let suffix: u32 = rand::random();
             let id = format!(
                 "{}-{suffix:08x}",
                 chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
