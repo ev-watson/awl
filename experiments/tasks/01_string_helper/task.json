@@ -1,0 +1,15 @@
+{
+  "id": "01_string_helper",
+  "description": "Write-from-scratch: implement capitalize_each_line.",
+  "difficulty": "easy",
+  "dispatch": {
+    "task": "Implement a function `capitalize_each_line(text: str) -> str` that returns the input text with the first character of each line uppercased. Preserve all other characters and the original line breaks. Empty lines stay empty.",
+    "constraints": [
+      "Pure Python 3, no external imports",
+      "Return only the function definition; no top-level execution"
+    ],
+    "target_path": "experiments/sandbox/01/textops.py",
+    "verify_command": "python3 -m unittest discover -v -s experiments/sandbox/01 -p 'test_*.py'",
+    "max_attempts": 2
+  }
+}

@@ -130,9 +130,20 @@ awl agent --task "Implement a quicksort function in src/sort.rs with tests"
 awl agent --resume <session-id>
 
 echo '{"task":"write a binary search","context":"Rust, no unsafe"}' | awl dispatch --level 2
+echo '{
+  "task": "replace src/search.rs with a tested binary search helper",
+  "target_path": "src/search.rs",
+  "context_paths": ["src/search.rs", "tests/search_test.rs"],
+  "auto_repomap": true,
+  "verify_command": "cargo test search_test",
+  "apply": true
+}' | awl dispatch --level 2 --apply
 echo '{"task":"plan a parser refactor","context":"src/parser.rs"}' | awl plan --level 2
 
 awl repomap --path . --budget 4096
+awl dispatches --list
+awl dispatches --prune 30
+scripts/dispatch_cost_report.py --avg-frontier-direct-tokens 6000 --frontier-cost-per-mtok 15
 awl hashline read src/main.rs
 awl sessions --list
 awl doctor
@@ -146,12 +157,58 @@ Core subcommands:
 | `awl config` | Show config path or saved config |
 | `awl agent` | Run the full agent loop |
 | `awl dispatch` | Delegate a JSON task to level 2 or 3 |
+| `awl dispatches` | Inspect local dispatch attempt logs |
 | `awl plan` | Ask level 2 or 3 for an implementation plan |
 | `awl repomap` | Generate a ranked repository map |
 | `awl hashline` | Read or apply hashline edits |
 | `awl serve` | Run Awl as an MCP server on stdio |
 | `awl doctor` | Check Ollama, models, sessions, and workspace state |
 | `awl sessions` | List or prune saved sessions |
+
+`awl dispatch` can either return generated code or apply it locally. In apply mode,
+Awl requires a single `target_path` or one `target_files` entry, snapshots that file,
+writes the generated replacement, runs `verify_command` when provided, and restores
+the previous contents if verification fails. `context_paths` lets the frontier
+coordinator pass file names instead of paying tokens to paste file contents.
+Dispatch results distinguish trusted local effects from model intent:
+`files_changed` and `files_modified` are actual Awl writes, while non-apply
+model claims are moved to `files_intended`. Each dispatch also writes a local
+JSONL attempt log under the Awl config directory and returns its `dispatch_id`
+and `log_path` in `telemetry`. Use `awl dispatches --prune <days>` to remove
+old local attempt logs.
+Use `auto_repomap: true` with optional `repomap_focus` / `repomap_budget` to
+inject a small local repository map without making the frontier coordinator read
+it first.
+
+### MCP integration
+
+`awl serve` is the stdio MCP server for Claude Code and Codex. Register it with the host client rather than running it manually in a standalone terminal:
+
+```bash
+claude mcp add --transport stdio --scope project awl -- /path/to/awl serve
+codex mcp add awl -- /path/to/awl serve
+```
+
+For a source checkout, build first with `cargo build --release`, then point the MCP client at `target/release/awl`.
+
+For Claude/Codex cost-saving workflows, prefer `awl_dispatch` level 2 or 3 with
+compact `target_path`, `context_paths`, constraints, and `verify_command` fields.
+Keep `awl_agent` for local-only runs or explicit experiments where a second local
+orchestrator is worth the latency. The MCP server hides `awl_agent` by default;
+set `AWL_ENABLE_MCP_AGENT=1` before `awl serve` only when you explicitly want to
+expose the full local agent loop.
+
+For quick local calibration, run:
+
+```bash
+scripts/dispatch_eval.sh
+scripts/dispatch_cost_report.py --days 7 --avg-frontier-direct-tokens 6000 --frontier-cost-per-mtok 15
+```
+
+It exercises non-apply dispatch, apply success, and rollback behavior and prints
+one JSON summary per case. The cost report reads local dispatch logs, sums local
+worker tokens, and can estimate paid frontier cost avoided when you provide a
+direct-frontier token baseline.
 
 ## Platform Support
 

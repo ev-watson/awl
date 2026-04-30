@@ -1,0 +1,16 @@
+{
+  "id": "02_validate_input",
+  "description": "Write-from-scratch: implement validate_email basic syntactic check.",
+  "difficulty": "easy",
+  "dispatch": {
+    "task": "Implement `validate_email(addr: str) -> bool` that returns True iff: (a) `addr` contains exactly one '@'; (b) the part before '@' is non-empty; (c) the part after '@' contains at least one '.'; (d) the address contains no whitespace; (e) length is at least 5. Otherwise return False. Do not raise.",
+    "constraints": [
+      "Pure Python 3, no imports beyond stdlib",
+      "Use `re` only if you really need to; basic string ops are fine",
+      "Return only the function definition; no top-level execution"
+    ],
+    "target_path": "experiments/sandbox/02/validators.py",
+    "verify_command": "python3 -m unittest discover -v -s experiments/sandbox/02 -p 'test_*.py'",
+    "max_attempts": 2
+  }
+}

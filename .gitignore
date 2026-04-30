@@ -5,6 +5,15 @@
 .DS_Store
 .vscode/
 .idea/
-.claude/
+.claude/*
+!.claude/agents/
+!.claude/agents/**
+!.claude/skills/
+!.claude/skills/**
+.codex/
+.agents/
+.mcp.json
 *.orig
 *.bak
+experiments/sandbox/
+experiments/results/

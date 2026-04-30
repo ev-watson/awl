@@ -10,7 +10,16 @@ homepage = "https://github.com/ev-watson/awl"
 keywords = ["agent", "coding", "ollama", "cli", "autonomous"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
-include = ["src/**/*", "README.md", "LICENSE", "Cargo.toml", "Cargo.lock", "vault.sh"]
+include = [
+    "src/**/*",
+    "scripts/dispatch_cost_report.py",
+    "scripts/dispatch_eval.sh",
+    "README.md",
+    "LICENSE",
+    "Cargo.toml",
+    "Cargo.lock",
+    "vault.sh",
+]
 
 [[bin]]
 name = "awl"
@@ -21,7 +30,7 @@ reqwest = { version = "0.13", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "process", "sync", "time"] }
-tree-sitter = "0.24"
+tree-sitter = "0.25"
 tree-sitter-python = "0.25"
 tree-sitter-rust = "0.24"
 petgraph = "0.8"

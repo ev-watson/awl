@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
 const MCP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct McpServerConfig {
@@ -89,7 +90,7 @@ impl McpClient {
         };
 
         let init = json!({
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": {},
             "clientInfo": {"name": "awl", "version": env!("CARGO_PKG_VERSION")}
         });
