@@ -1,0 +1,17 @@
+{
+  "id": "03_fix_off_by_one",
+  "description": "Edit-existing: fix an off-by-one bug in moving_average.",
+  "difficulty": "medium",
+  "dispatch": {
+    "task": "The function `moving_average(values, window)` in the target file has a bug — it skips the last window-sized slice. Fix it so it returns one value per valid window over the input list. Verify by running the included tests.",
+    "constraints": [
+      "Preserve the function signature `moving_average(values: list[float], window: int) -> list[float]`",
+      "Return float values; round each to 4 decimal places",
+      "Raise ValueError if window <= 0 or window > len(values)"
+    ],
+    "context_paths": ["experiments/sandbox/03/test_moving_average.py"],
+    "target_path": "experiments/sandbox/03/moving_average.py",
+    "verify_command": "python3 -m unittest discover -v -s experiments/sandbox/03 -p 'test_*.py'",
+    "max_attempts": 3
+  }
+}
