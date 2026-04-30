@@ -586,7 +586,18 @@ impl Tool for DispatchTool {
             "properties":{
                 "level":{"type":"integer","enum":[2,3]},
                 "task":{"type":"string"},
-                "context":{"type":"string"}
+                "context":{"type":"string"},
+                "constraints":{"type":"array","items":{"type":"string"}},
+                "target_path":{"type":"string"},
+                "target_files":{"type":"array","items":{"type":"string"}},
+                "context_paths":{"type":"array","items":{"type":"string"}},
+                "verify_command":{"type":"string"},
+                "apply":{"type":"boolean"},
+                "max_attempts":{"type":"integer"},
+                "max_return_chars":{"type":"integer"},
+                "auto_repomap":{"type":"boolean"},
+                "repomap_focus":{"type":"array","items":{"type":"string"}},
+                "repomap_budget":{"type":"integer"}
             },
             "required":["level","task"]
         })
@@ -609,13 +620,52 @@ impl Tool for DispatchTool {
             .and_then(Value::as_str)
             .ok_or_else(|| "dispatch requires string field: task".to_string())?;
         let context = args.get("context").and_then(Value::as_str).unwrap_or("");
+        let constraints = optional_string_array(&args, "constraints")?;
+        let target_path = args
+            .get("target_path")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
+        let target_files = optional_string_array(&args, "target_files")?;
+        let context_paths = optional_string_array(&args, "context_paths")?;
+        let verify_command = args
+            .get("verify_command")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
+        let apply = args.get("apply").and_then(Value::as_bool).unwrap_or(false);
+        let max_attempts = optional_usize(&args, "max_attempts")?;
+        let max_return_chars = optional_usize(&args, "max_return_chars")?;
+        let auto_repomap = args
+            .get("auto_repomap")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let repomap_focus = optional_string_array(&args, "repomap_focus")?;
+        let repomap_budget = optional_usize(&args, "repomap_budget")?;
         let payload = json!({
             "task": task,
             "context": context,
-            "constraints": []
+            "constraints": constraints,
+            "target_path": target_path,
+            "target_files": target_files,
+            "context_paths": context_paths,
+            "verify_command": verify_command,
+            "apply": apply,
+            "max_attempts": max_attempts,
+            "max_return_chars": max_return_chars,
+            "auto_repomap": auto_repomap,
+            "repomap_focus": repomap_focus,
+            "repomap_budget": repomap_budget
         });
         let input = serde_json::to_string(&payload).map_err(|e| format!("payload error: {e}"))?;
-        crate::dispatch::run_capture(level, &input).map_err(|e| e.to_string())
+        let mut options = crate::dispatch::DispatchOptions::new(level);
+        options.apply = apply;
+        options.verify_command = verify_command;
+        options.target_path = target_path;
+        options.max_attempts = max_attempts;
+        options.max_return_chars = max_return_chars;
+        options.auto_repomap = auto_repomap;
+        options.repomap_focus = repomap_focus;
+        options.repomap_budget = repomap_budget;
+        crate::dispatch::run_capture(&options, &input).map_err(|e| e.to_string())
     }
 }
 
@@ -744,19 +794,14 @@ impl ToolRegistry {
 
         if tool.cacheable() {
             let key = (name.to_string(), hash_args(&args));
-            match self.cache.lock() {
-                Ok(mut cache) => {
-                    if let Some(cached) = cache.get(&key) {
-                        eprintln!("[cache] hit: {name}");
-                        return Ok(cached);
-                    }
+            if let Ok(mut cache) = self.cache.lock() {
+                if let Some(cached) = cache.get(&key) {
+                    return Ok(cached);
                 }
-                Err(e) => eprintln!("[cache] lock failed: {e}"),
             }
             let result = tool.execute(args).await?;
-            match self.cache.lock() {
-                Ok(mut cache) => cache.insert(key, result.clone()),
-                Err(e) => eprintln!("[cache] lock failed: {e}"),
+            if let Ok(mut cache) = self.cache.lock() {
+                cache.insert(key, result.clone());
             }
             Ok(result)
         } else {
@@ -772,6 +817,30 @@ fn truncate_text(input: &str, limit: usize) -> String {
     let mut out = input.chars().take(limit).collect::<String>();
     out.push_str("\n\n[truncated]");
     out
+}
+
+fn optional_string_array(args: &Value, key: &str) -> Result<Vec<String>, String> {
+    let Some(value) = args.get(key) else {
+        return Ok(Vec::new());
+    };
+    let Some(values) = value.as_array() else {
+        return Err(format!("{key} must be an array of strings"));
+    };
+    values
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .map(ToString::to_string)
+                .ok_or_else(|| format!("{key} must be an array of strings"))
+        })
+        .collect()
+}
+
+fn optional_usize(args: &Value, key: &str) -> Result<Option<usize>, String> {
+    args.get(key)
+        .and_then(Value::as_u64)
+        .map(|value| usize::try_from(value).map_err(|_| format!("{key} is too large")))
+        .transpose()
 }
 
 fn compile_glob(raw: Option<&str>) -> Result<Option<Pattern>, String> {

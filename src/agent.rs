@@ -2,6 +2,7 @@ use std::fmt::Write as _;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
@@ -16,6 +17,8 @@ pub struct AgentConfig {
     pub base_url: String,
     pub max_tokens: u32,
     pub max_iterations: usize,
+    pub max_text_without_tool: u32,
+    pub max_wall_seconds: u64,
     pub temperature: f64,
     pub mcp_config_path: Option<PathBuf>,
 }
@@ -27,6 +30,8 @@ impl Default for AgentConfig {
             base_url: defaults::configured_ollama_base_url(),
             max_tokens: 4096,
             max_iterations: 30,
+            max_text_without_tool: 6,
+            max_wall_seconds: 600,
             temperature: 0.2,
             mcp_config_path: defaults::configured_mcp_config_path(),
         }
@@ -70,8 +75,23 @@ pub async fn run_agent(
     };
     refresh_system_message(&mut messages, phase_state);
     let mut consecutive_text_count: u32 = 0;
+    let mut previous_text_hash: Option<u64> = None;
+    let mut repeated_text_count: u32 = 0;
+    let started = Instant::now();
 
     for _iteration in 0..config.max_iterations {
+        if started.elapsed() > Duration::from_secs(config.max_wall_seconds) {
+            return needs_human(
+                phase_state,
+                session,
+                &format!(
+                    "Exceeded max wall time ({}s) during {} phase",
+                    config.max_wall_seconds,
+                    phase_state.current.name()
+                ),
+            );
+        }
+
         if estimate_tokens(&messages) > COMPACTION_THRESHOLD {
             if let Err(error) =
                 compact_messages(&mut messages, phase_state, config, &client, &url).await
@@ -153,6 +173,8 @@ pub async fn run_agent(
                 session.append(&tool_message)?;
                 messages.push(tool_message);
                 consecutive_text_count = 0;
+                previous_text_hash = None;
+                repeated_text_count = 0;
                 continue;
             }
 
@@ -160,6 +182,8 @@ pub async fn run_agent(
             match phases::detect_gate(phase_state.current, content) {
                 Some(GateSignal::Advance) => {
                     consecutive_text_count = 0;
+                    previous_text_hash = None;
+                    repeated_text_count = 0;
                     eprintln!("[agent] phase {} complete", phase_state.current.name());
                     if phase_state.advance().is_none() {
                         session.update_metadata(phase_state)?;
@@ -176,6 +200,8 @@ pub async fn run_agent(
                 }
                 Some(GateSignal::Regress) => {
                     consecutive_text_count = 0;
+                    previous_text_hash = None;
+                    repeated_text_count = 0;
                     eprintln!("[agent] verification failed; regressing to execute");
                     phase_state.regress_to_execute()?;
                     session.update_metadata(phase_state)?;
@@ -196,26 +222,36 @@ pub async fn run_agent(
                         return Ok(content.to_string());
                     }
                     consecutive_text_count += 1;
-                    if consecutive_text_count >= 3 {
-                        let prior_phase = phase_state.current;
-                        let handoff = format!(
-                            "NEEDS_HUMAN_REVIEW: Agent produced {} consecutive text responses \
-without tool use or phase completion in {} phase. Last output: {}\nSession: {}",
-                            consecutive_text_count,
-                            prior_phase.name(),
-                            truncate(content, 500),
-                            session.id()
+                    let current_hash = hash_text(content);
+                    if previous_text_hash == Some(current_hash) {
+                        repeated_text_count += 1;
+                    } else {
+                        previous_text_hash = Some(current_hash);
+                        repeated_text_count = 1;
+                    }
+                    if repeated_text_count >= 2 {
+                        return needs_human(
+                            phase_state,
+                            session,
+                            &format!(
+                                "Agent repeated the same text response {} times without tool use or phase completion in {} phase. Last output: {}",
+                                repeated_text_count,
+                                phase_state.current.name(),
+                                truncate(content, 500)
+                            ),
                         );
-                        eprintln!("[agent] {handoff}");
-                        phase_state
-                            .phase_notes
-                            .insert("prior_phase".to_string(), prior_phase.name().to_string());
-                        phase_state
-                            .phase_notes
-                            .insert("handoff_reason".to_string(), handoff.clone());
-                        phase_state.current = Phase::NeedsHuman;
-                        session.update_metadata(phase_state)?;
-                        return Err(handoff.into());
+                    }
+                    if consecutive_text_count >= config.max_text_without_tool {
+                        return needs_human(
+                            phase_state,
+                            session,
+                            &format!(
+                                "Agent produced {} consecutive text responses without tool use or phase completion in {} phase. Last output: {}",
+                                consecutive_text_count,
+                                phase_state.current.name(),
+                                truncate(content, 500)
+                            ),
+                        );
                     }
                     let nudge = json!({
                         "role": "user",
@@ -251,6 +287,8 @@ without tool use or phase completion in {} phase. Last output: {}\nSession: {}",
                 Ok(value) => value,
                 Err(error) => {
                     consecutive_text_count = 0;
+                    previous_text_hash = None;
+                    repeated_text_count = 0;
                     let tool_message = json!({
                         "role":"tool",
                         "tool_call_id": call_id,
@@ -268,6 +306,8 @@ without tool use or phase completion in {} phase. Last output: {}\nSession: {}",
                 eprintln!("[tool] {name}");
             }
             consecutive_text_count = 0;
+            previous_text_hash = None;
+            repeated_text_count = 0;
             let tool_output = match registry.execute(name, parsed_args).await {
                 Ok(output) => output,
                 Err(error) => format!("ERROR: {error}"),
@@ -328,6 +368,34 @@ fn parse_inline_tool_call(content: &str) -> Option<(String, Value)> {
         return Some((name.to_string(), arguments));
     }
     None
+}
+
+fn needs_human(
+    phase_state: &mut PhaseState,
+    session: &Session,
+    reason: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let prior_phase = phase_state.current;
+    let handoff = format!("NEEDS_HUMAN_REVIEW: {reason}\nSession: {}", session.id());
+    eprintln!("[agent] {handoff}");
+    phase_state
+        .phase_notes
+        .insert("prior_phase".to_string(), prior_phase.name().to_string());
+    phase_state
+        .phase_notes
+        .insert("handoff_reason".to_string(), handoff.clone());
+    phase_state.current = Phase::NeedsHuman;
+    session.update_metadata(phase_state)?;
+    Err(handoff.into())
+}
+
+fn hash_text(content: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in content.trim().bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    hash
 }
 
 async fn register_mcp_tools(
@@ -397,6 +465,9 @@ pub fn run_agent_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     let mut persona: Option<String> = None;
     let mut goal: Option<String> = None;
     let mut ideas: Vec<String> = Vec::new();
+    let mut max_iterations: Option<usize> = None;
+    let mut max_text_without_tool: Option<u32> = None;
+    let mut max_wall_seconds: Option<u64> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -431,6 +502,33 @@ pub fn run_agent_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
                 i += 1;
                 ideas.push(args.get(i).cloned().ok_or("--idea requires a value")?);
             }
+            "--max-iterations" => {
+                i += 1;
+                max_iterations = Some(
+                    args.get(i)
+                        .ok_or("--max-iterations requires a value")?
+                        .parse()
+                        .map_err(|_| "--max-iterations must be a positive integer")?,
+                );
+            }
+            "--max-text-without-tool" => {
+                i += 1;
+                max_text_without_tool = Some(
+                    args.get(i)
+                        .ok_or("--max-text-without-tool requires a value")?
+                        .parse()
+                        .map_err(|_| "--max-text-without-tool must be a positive integer")?,
+                );
+            }
+            "--max-wall-seconds" => {
+                i += 1;
+                max_wall_seconds = Some(
+                    args.get(i)
+                        .ok_or("--max-wall-seconds requires a value")?
+                        .parse()
+                        .map_err(|_| "--max-wall-seconds must be a positive integer")?,
+                );
+            }
             other => return Err(format!("unknown agent flag: {other}").into()),
         }
         i += 1;
@@ -445,11 +543,20 @@ pub fn run_agent_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     if task.is_empty() && resume_id.is_none() {
         return Err("--task <description> or --resume <session-id> required".into());
     }
-    let config = AgentConfig {
+    let mut config = AgentConfig {
         model,
         mcp_config_path: mcp_config.or_else(defaults::configured_mcp_config_path),
         ..Default::default()
     };
+    if let Some(value) = max_iterations {
+        config.max_iterations = value;
+    }
+    if let Some(value) = max_text_without_tool {
+        config.max_text_without_tool = value;
+    }
+    if let Some(value) = max_wall_seconds {
+        config.max_wall_seconds = value;
+    }
 
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async move {

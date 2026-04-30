@@ -16,6 +16,7 @@ pub const IMPLEMENTATION_MODEL_ENV: &str = "AWL_IMPLEMENTATION_MODEL";
 pub const VERIFICATION_MODEL_ENV: &str = "AWL_VERIFICATION_MODEL";
 pub const OLLAMA_BASE_URL_ENV: &str = "OLLAMA_BASE_URL";
 pub const OLLAMA_HOST_ENV: &str = "OLLAMA_HOST";
+pub const ENABLE_MCP_AGENT_ENV: &str = "AWL_ENABLE_MCP_AGENT";
 
 pub fn configured_ollama_base_url() -> String {
     let configured = config::load().ok().and_then(|loaded| loaded.base_url);
@@ -93,6 +94,12 @@ pub fn configured_mcp_config_path() -> Option<PathBuf> {
     })
 }
 
+pub fn mcp_agent_enabled() -> bool {
+    std::env::var(ENABLE_MCP_AGENT_ENV)
+        .ok()
+        .is_some_and(|value| matches_enabled(&value))
+}
+
 fn normalize_ollama_base_url(base_url: &str) -> String {
     let trimmed = base_url.trim().trim_end_matches('/');
     if trimmed.is_empty() {
@@ -122,6 +129,13 @@ fn configured_string(
         .or_else(|| config::load().ok().and_then(config_value))
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| fallback.to_string())
+}
+
+fn matches_enabled(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
 }
 
 #[cfg(test)]
@@ -174,5 +188,16 @@ mod tests {
             ollama_tags_url("http://localhost:11434"),
             "http://localhost:11434/api/tags"
         );
+    }
+
+    #[test]
+    fn mcp_agent_env_parsing_accepts_common_enabled_values() {
+        assert!(matches_enabled("1"));
+        assert!(matches_enabled("true"));
+        assert!(matches_enabled("YES"));
+        assert!(matches_enabled("on"));
+        assert!(!matches_enabled("0"));
+        assert!(!matches_enabled("false"));
+        assert!(!matches_enabled(""));
     }
 }

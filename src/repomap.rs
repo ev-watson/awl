@@ -7,7 +7,7 @@
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tree_sitter::{Node, Parser, Tree};
@@ -464,6 +464,40 @@ fn render_map(flat: &[(PathBuf, Symbol)], scores: &[f64], root: &Path, budget: u
     output
 }
 
+/// Return the set of crate-internal Rust module names declared in the repo.
+/// Built from `.rs` file stems plus parent directories of `mod.rs` files;
+/// `main`/`lib` themselves are not modules you'd write `use crate::main` for.
+pub fn known_rust_modules(root: &Path) -> HashSet<String> {
+    let mut modules = HashSet::new();
+    let canonical = match safety::resolve_existing_directory(root) {
+        Ok(p) => p,
+        Err(_) => return modules,
+    };
+    for file in scan_directory(&canonical) {
+        if file.extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+        let Some(stem) = file.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if stem == "main" || stem == "lib" {
+            continue;
+        }
+        if stem == "mod" {
+            if let Some(parent) = file
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|s| s.to_str())
+            {
+                modules.insert(parent.to_string());
+            }
+            continue;
+        }
+        modules.insert(stem.to_string());
+    }
+    modules
+}
+
 type SymbolGraph = DiGraph<usize, Reference>;
 type FlatSymbols = Vec<(PathBuf, Symbol)>;
 type RepoAnalysis = (PathBuf, Vec<PathBuf>, SymbolGraph, FlatSymbols, Vec<f64>);
@@ -613,5 +647,55 @@ mod tests {
 
         let (graph, _flat) = build_graph(&all_symbols);
         assert_eq!(graph.edge_count(), 1);
+    }
+
+    #[test]
+    fn known_rust_modules_collects_file_stems_and_mod_dirs() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock drift")
+            .as_nanos();
+        let root = PathBuf::from(format!(
+            "target/awl-repomap-tests/modules-{}-{nanos}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join("nested")).expect("create nested dir");
+        fs::write(root.join("main.rs"), "fn main() {}\n").expect("write main");
+        fs::write(root.join("lib.rs"), "pub mod foo;\n").expect("write lib");
+        fs::write(root.join("foo.rs"), "pub fn f() {}\n").expect("write foo");
+        fs::write(root.join("nested/mod.rs"), "pub fn n() {}\n").expect("write nested mod");
+
+        let modules = known_rust_modules(&root);
+
+        assert!(modules.contains("foo"));
+        assert!(modules.contains("nested"));
+        assert!(!modules.contains("main"));
+        assert!(!modules.contains("lib"));
+        assert!(!modules.contains("mod"));
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn generate_parses_python_files() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock drift")
+            .as_nanos();
+        let root = PathBuf::from(format!(
+            "target/awl-repomap-tests/python-{}-{nanos}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create repomap test root");
+        fs::write(
+            root.join("sample.py"),
+            "def useful_helper(value):\n    return value * 2\n",
+        )
+        .expect("write python fixture");
+
+        let output = generate(&root, 256, &[]).expect("generate repo map");
+
+        assert!(output.contains("sample.py"));
+        assert!(output.contains("useful_helper"));
+        fs::remove_dir_all(root).expect("cleanup repomap test root");
     }
 }

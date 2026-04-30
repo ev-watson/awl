@@ -35,6 +35,18 @@ jobs:
       - name: Test
         run: cargo test
 
+      - name: Check dispatch cost report
+        run: python3 scripts/dispatch_cost_report.py --logs-dir target/no-dispatches
+
+      - name: Optional local dispatch eval
+        if: env.AWL_RUN_DISPATCH_EVAL == '1'
+        run: |
+          if ! command -v ollama >/dev/null 2>&1; then
+            echo "Ollama is not installed; skipping dispatch eval"
+            exit 0
+          fi
+          scripts/dispatch_eval.sh
+
       - name: Package dry run
         if: matrix.os == 'ubuntu-latest'
         run: cargo package --locked --no-verify --list
