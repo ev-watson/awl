@@ -1,678 +1,177 @@
-# STRUCTURE.md - Awl Project Structure Map
+# Project Structure
 
 **Analysis Date:** 2026-05-01
 **Focus:** computation
-**Project:** Awl v0.3.0 - Rust CLI + stdio MCP server for bounded local-model coding dispatch
 
-> **Adaptation note:** This file maps software structure rather than physics
-> artifacts. It covers source layout, experiment assets, configuration, data
-> formats, dependency relationships, and build/test commands. Existing map
-> artifacts in `GPD/research-map/REFERENCES.md`, `GPD/research-map/VALIDATION.md`,
-> `GPD/research-map/CONVENTIONS.md`, `GPD/research-map/FORMALISM.md`, and
-> `GPD/research-map/status.md` were read and preserved by reference.
+## Active Reference Context
 
-## Top-Level Layout
+- Active Reference Registry: none confirmed in `GPD/state.json.project_contract.references`; `GPD/state.json` was missing at scan time.
+- Must-read references: none confirmed.
+- Prior outputs and baselines: none confirmed.
+- User-asserted anchors and gaps: none beyond the mapping request.
+- Stable knowledge documents: none found in the active context.
+
+## Directory Layout
 
 ```text
 /Users/blu3/awl/
-├── Cargo.toml
-├── Cargo.lock
-├── README.md
-├── HANDOFF_TO_GPD.md
-├── REPORT_DISPATCH_RELIABILITY.md
-├── UPDATED_PROGRESS_REPORT.md
-├── src/
-├── scripts/
-├── experiments/
-├── examples/
-├── .github/
-├── .claude/
-├── GPD/research-map/
-└── vault.sh
++-- src/                         # Rust source for the awl CLI, MCP server/client, agent loop, tools, dispatch, safety, sessions
++-- scripts/                     # Install, dispatch evaluation, and dispatch-log cost-report helpers
++-- experiments/                 # A/B local-dispatch savings experiment harness, tasks, generated sandbox/results
++-- examples/                    # Example Claude/Codex MCP configuration and worker-agent prompt
++-- .github/                     # CI, release, issue templates, dependabot, CODEOWNERS
++-- GPD/                         # GPD state lock and research-map output directory
++-- target/                      # Cargo build output and generated eval/smoke artifacts; generated, not source
++-- Cargo.toml                   # Rust package metadata, dependencies, lint policy, binary target
++-- Cargo.lock                   # Locked Rust dependency graph
++-- README.md                    # User-facing architecture, configuration, usage, MCP, and experiment docs
++-- CHANGELOG.md                 # Release notes
++-- CONTRIBUTING.md              # Contribution process
++-- SECURITY.md                  # Security policy
++-- HANDOFF_TO_GPD.md            # Local project handoff note; not part of the Rust build
++-- REPORT_DISPATCH_RELIABILITY.md # Local reliability report; not part of the Rust build
++-- UPDATED_PROGRESS_REPORT.md   # Local progress report; not part of the Rust build
++-- .mcp.json                    # Local MCP registration for target/release/awl serve
++-- vault.sh                     # Optional macOS helper packaged by release workflow
 ```
 
-Important policy and research anchors:
-
-- `HANDOFF_TO_GPD.md`: current project handoff, product hypothesis, hard
-  constraints, branch protection rules, and patch list.
-- `REPORT_DISPATCH_RELIABILITY.md`: most recent research artifact; authoritative
-  for retry/model/cost decisions.
-- `UPDATED_PROGRESS_REPORT.md`: historical baseline and progress narrative.
-- `experiments/README.md`: Step 1 A/B experiment protocol and success thresholds.
-- `GPD/research-map/REFERENCES.md`: active anchor registry ANC-001 through
-  ANC-012.
-
-`GPD/state.json` is absent; `GPD/state.json.lock` exists. Therefore no project
-contract was treated as authoritative.
-
-## Rust Crate Metadata
-
-`Cargo.toml` defines a single binary crate:
-
-- Package: `awl`
-- Version: `0.3.0`
-- Edition: `2021`
-- Binary: `[[bin]] name = "awl", path = "src/main.rs"`
-- License field: `MIT`
-- Note: `HANDOFF_TO_GPD.md` says to see `LICENSE` and reports AGPL-3.0; this
-  license discrepancy is already flagged in `GPD/research-map/CONVENTIONS.md`.
-
-Release and lint settings in `Cargo.toml`:
-
-- `[profile.release] lto = true`, `strip = true`
-- `[lints.rust] unsafe_code = "forbid"`
-- `[lints.clippy] all = "warn"`, `pedantic = "warn"`
-- Relaxed clippy lints: `module_name_repetitions`, `missing_panics_doc`,
-  `missing_errors_doc`
-
-Dependencies:
-
-- Runtime/model I/O: `reqwest`, `tokio`
-- Serialization: `serde`, `serde_json`
-- Code mapping: `tree-sitter`, `tree-sitter-python`, `tree-sitter-rust`,
-  `petgraph`
-- File/tool support: `glob`, `walkdir`
-- Utility: `rand`, `chrono`, `async-trait`
-
-## Source Directory
-
-`src/` contains the executable and all core modules. Current line counts from
-inspection:
-
-| File | Lines | Role |
-|------|------:|------|
-| `src/dispatch.rs` | 1600 | Dispatch v2 hot path: task parsing, prompt assembly, model call, strict JSON schema, apply/verify/rollback, retry, telemetry, dispatch log management. |
-| `src/tools.rs` | 947 | Tool registry for the local `awl agent` loop: bash, file read/write/edit, search/list, repomap, dispatch, and MCP proxies. |
-| `src/agent.rs` | 939 | L1 local agent loop with phase discipline, tool calls, session logging, compaction, and stall guards. Secondary to the frontier-token-savings path. |
-| `src/repomap.rs` | 701 | Tree-sitter Python/Rust symbol extraction, import graph, PageRank ranking, repo-map rendering, and Rust module discovery. |
-| `src/mcp_server.rs` | 614 | stdio MCP server exposing `awl_health`, `awl_dispatch`, `awl_repomap`, `awl_hashline`, and gated `awl_agent`. |
-| `src/hashline.rs` | 482 | Content-hashed line display and edit application utility. |
-| `src/main.rs` | 306 | CLI entry point and argument parsing for all subcommands. |
-| `src/mcp_client.rs` | 260 | Client for connecting the local agent to external MCP servers. |
-| `src/init.rs` | 250 | `awl init` profile/config writer. |
-| `src/defaults.rs` | 203 | Default models, environment-variable precedence, Ollama URL normalization, token budgets, MCP agent gate. |
-| `src/safety.rs` | 199 | Workspace path containment and shell command validation. |
-| `src/doctor.rs` | 196 | `awl doctor` health checks for config, Ollama, models, sessions, workspace, MCP config. |
-| `src/session.rs` | 188 | JSONL session persistence for `awl agent`. |
-| `src/config.rs` | 177 | User config path resolution, load/save, CLI display. |
-| `src/phases.rs` | 168 | Agent phase state machine and gate detection. |
-| `src/plan.rs` | 148 | Local model planning subcommand. |
-| `src/llm_io.rs` | 50 | Markdown fence stripping and JSON string sanitization. |
-
-Total inspected Rust source lines: 7428.
-
-## Core Module Relationships
-
-```text
-src/main.rs
-  ├── dispatch::run / dispatch::run_logs
-  ├── mcp_server::run_server
-  ├── repomap::run
-  ├── hashline::run
-  ├── plan::run
-  ├── agent::run_agent_cli
-  ├── init::run
-  ├── config::run_cli
-  ├── doctor::run
-  └── session list/prune
-
-src/mcp_server.rs
-  ├── dispatch::run_capture
-  ├── repomap::generate
-  ├── hashline::run_capture / apply_from_string
-  └── agent::run_agent when AWL_ENABLE_MCP_AGENT=1
-
-src/dispatch.rs
-  ├── defaults::{configured_ollama_base_url, configured_model_for_level, max_tokens_for_level}
-  ├── llm_io::{strip_code_fences, sanitize_json_strings}
-  ├── safety::{resolve_existing_path, resolve_path_for_write, validate_shell_command}
-  ├── repomap::{generate, known_rust_modules}
-  ├── config::config_dir for dispatch logs
-  └── reqwest/tokio for Ollama chat completions
-
-src/agent.rs
-  ├── tools::ToolRegistry
-  ├── mcp_client::{load_mcp_config, McpClient}
-  ├── phases::{PhaseState, GateSignal}
-  ├── session::Session
-  └── defaults for model/base-url/MCP config
-```
-
-The computational center is `src/dispatch.rs`; `src/mcp_server.rs` and
-`src/main.rs` are input adapters over the same dispatch engine.
-
-## Important Source Files
-
-### `src/dispatch.rs`
-
-Key definitions:
-
-- `DispatchOptions`: CLI/MCP-side option struct with `level`, `apply`,
-  `verify_command`, `target_path`, retry/output limits, and repo-map controls.
-  It currently lacks `model`, which is required by the confirmed model override
-  decision.
-- `TaskSpec`: stdin/MCP dispatch payload with `task`, `context`, `constraints`,
-  `target_path`, `target_files`, `context_paths`, `verify_command`, `apply`,
-  `max_attempts`, `max_return_chars`, `auto_repomap`, `repomap_focus`,
-  `repomap_budget`.
-- `SYSTEM_PROMPT` and `dispatch_response_format()`: strict dispatch v2 model
-  contract.
-- `run_capture()`: end-to-end dispatch entry that returns JSON text.
-- `run_apply_flow()`: generate/write/verify/rollback loop.
-- `dispatch_with_retry()`: JSON/schema retry loop.
-- `capture_snapshot()`, `write_target()`, `restore_snapshot()`: rollback
-  primitives.
-- `run_verify_command()`: local verifier execution with hardcoded 120s timeout.
-- `apply_result()` and `error_result()`: returned result shapes. These do not
-  yet include `failure_category`.
-
-Tests live inline in `src/dispatch.rs` lines 1373-1600 and cover target
-resolution, rollback, verify failure reporting, compact output, trusted
-changed-file reporting, dispatch log pruning, ambiguous targets, and Rust
-unresolved-import preflight.
-
-### `src/defaults.rs`
-
-Defines model defaults:
-
-- `DEFAULT_AGENT_MODEL = "qwen2.5-coder:14b"`
-- `DEFAULT_IMPLEMENTATION_MODEL = "qwen2.5-coder:7b-instruct-q4_K_M"`
-- `DEFAULT_VERIFICATION_MODEL = "qwen2.5-coder:3b-instruct-q4_K_M"`
-
-Defines environment variables:
-
-- `AWL_AGENT_MODEL`
-- `AWL_IMPLEMENTATION_MODEL`
-- `AWL_VERIFICATION_MODEL`
-- `OLLAMA_BASE_URL`
-- `OLLAMA_HOST`
-- `AWL_ENABLE_MCP_AGENT`
-
-Provides URL normalization and max token budgets. L2 has 8192 max tokens; L3
-has 4096.
-
-### `src/mcp_server.rs`
-
-Exposes MCP tools:
-
-- `awl_health`
-- `awl_dispatch`
-- `awl_repomap`
-- `awl_hashline`
-- `awl_agent` only when `AWL_ENABLE_MCP_AGENT=1`
-
-The `awl_dispatch` schema includes `level`, `task`, `context`, `constraints`,
-`target_path`, `target_files`, `context_paths`, `verify_command`, `apply`,
-`max_attempts`, `max_return_chars`, `auto_repomap`, `repomap_focus`, and
-`repomap_budget`. It currently does not include `model`.
-
-### `src/repomap.rs`
-
-Provides:
-
-- Directory scan over `.rs` and `.py`, skipping hidden directories, `target`,
-  `__pycache__`, `node_modules`, and `.git`.
-- Tree-sitter symbol extraction for Rust and Python.
-- Import graph construction and PageRank.
-- Token-budgeted text rendering for prompts.
-- `known_rust_modules()` for Rust preflight.
-
-### `src/safety.rs`
-
-Provides workspace containment and shell validation. It is security-critical
-because `verify_command` and the local agent `bash` tool run through this
-module. Current validation allows common shell tools plus `cargo` and `git`
-subcommand allowlists, and rejects newline, semicolon, backtick, and `$(`.
-
-`GPD/research-map/VALIDATION.md` notes that `src/safety.rs` has no unit tests.
-
-## Documentation and Research Artifacts
-
-Primary docs:
-
-- `README.md`: installation, configuration, CLI usage, MCP integration,
-  dispatch behavior, development gates.
-- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`:
-  repository governance and release/security process.
-- `LICENSE`: repository license text.
-
-Research artifacts:
-
-- `HANDOFF_TO_GPD.md`: project map and active work queue. It must surface
-  branch protection rules, no-paid-API constraint, success criterion, and the
-  5-item patch list.
-- `REPORT_DISPATCH_RELIABILITY.md`: current decision record for retry policy,
-  model override, failure taxonomy, split cost accounting, and Step 1 state.
-- `UPDATED_PROGRESS_REPORT.md`: background on pre-v2 failures and progress
-  against the corrective plan.
-- `GPD/research-map/REFERENCES.md`: active anchors, especially ANC-001 through
-  ANC-012.
-- `GPD/research-map/FORMALISM.md`: product hypothesis, dispatch equations,
-  invariants, regimes, and failure taxonomy.
-- `GPD/research-map/CONVENTIONS.md`: coding, contract, retry, telemetry, and
-  workflow conventions.
-- `GPD/research-map/VALIDATION.md`: tests, CI, experiment method, validation
-  gaps.
-- `GPD/research-map/status.md`: blockers and open empirical questions.
-
-New files from this computation mapping pass:
-
-- `GPD/research-map/ARCHITECTURE.md`
-- `GPD/research-map/STRUCTURE.md`
-
-## Experiment Directory
-
-`experiments/` contains the A/B savings experiment:
-
-```text
-experiments/
-├── README.md
-├── run_awl_arm.sh
-├── tally.py
-├── tasks/
-│   ├── 01_string_helper/
-│   │   ├── task.json
-│   │   └── setup.sh
-│   ├── 02_validate_input/
-│   │   ├── task.json
-│   │   └── setup.sh
-│   └── 03_fix_off_by_one/
-│       ├── task.json
-│       └── setup.sh
-├── results/      # gitignored, present locally
-└── sandbox/      # gitignored, generated by setup.sh
-```
-
-`experiments/README.md` specifies:
-
-- Local arm prerequisite: Ollama running locally, L2 model pulled, `python3`.
-- Awl arm output: `experiments/results/awl_arm.jsonl` and
-  `experiments/results/<id>.json`.
-- Manual baseline file: `experiments/results/baseline.csv`.
-- Success thresholds: >=25-40% token reduction and >=60-70% usable Awl pass
-  rate.
-
-`experiments/run_awl_arm.sh`:
-
-- Defaults `AWL_BIN` to `cargo run --quiet --`.
-- Defaults `AWL_LEVEL` to `2`.
-- Recreates `experiments/results/awl_arm.jsonl`.
-- Runs each task's `setup.sh`.
-- Pipes the `dispatch` block from `task.json` into `awl dispatch --level "$LEVEL" --apply --auto-repomap`.
-- Extracts `prompt_tokens`, `completion_tokens`, `total_tokens`, status,
-  attempts, model, dispatch id, and wall time.
-
-Current tasks:
-
-| Task | File | Type | Current dispatch traits |
-|------|------|------|-------------------------|
-| `01_string_helper` | `experiments/tasks/01_string_helper/task.json` | Python write-from-scratch | target `experiments/sandbox/01/textops.py`, unittest verify, `max_attempts: 2`; known 7B-q4 deterministic trailing-newline failure. |
-| `02_validate_input` | `experiments/tasks/02_validate_input/task.json` | Python write-from-scratch | target `experiments/sandbox/02/validators.py`, unittest verify, `max_attempts: 2`; passed in partial Step 1. |
-| `03_fix_off_by_one` | `experiments/tasks/03_fix_off_by_one/task.json` | Python edit-existing | context path `experiments/sandbox/03/test_moving_average.py`, target `experiments/sandbox/03/moving_average.py`, unittest verify, `max_attempts: 3`; passed in partial Step 1. |
-
-Local generated files observed:
-
-- `experiments/results/awl_arm.jsonl`
-- `experiments/results/01_string_helper.json`
-- `experiments/results/02_validate_input.json`
-- `experiments/results/03_fix_off_by_one.json`
-- `experiments/sandbox/01/*`
-- `experiments/sandbox/02/*`
-- `experiments/sandbox/03/*`
-
-These are gitignored by `.gitignore`.
-
-## Scripts
-
-`scripts/dispatch_cost_report.py`:
-
-- Reads dispatch JSONL logs from `~/.config/awl/dispatches` by default, with
-  overrides for `AWL_CONFIG_DIR`, `XDG_CONFIG_HOME`, and `APPDATA`.
-- Counts success/failure based on event names.
-- Sums prompt/completion/total local worker tokens.
-- Estimates avoided paid frontier cost from `--frontier-direct-tokens`,
-  `--avg-frontier-direct-tokens`, and blended `--frontier-cost-per-mtok`.
-- CI smoke-tests it on an empty log directory.
-- Gap: no split input/output cost rates and no failure-category aggregation.
-
-`scripts/dispatch_eval.sh`:
-
-- Runs three local dispatch smoke cases: non-apply, apply success, and rollback.
-- Writes outputs under `target/awl-eval`.
-- Uses L3 by default in the scripted cases.
-- Superseded by `experiments/` for the main savings experiment but still useful
-  as a local smoke check.
-
-`scripts/install.sh`:
-
-- Release installer included in crate packaging.
-
-## Examples and Integration Config
-
-`examples/` contains:
-
-- `examples/claude-code.mcp.json`: MCP config template for Claude Code.
-- `examples/codex-config.toml`: Codex config template.
-- `examples/awl-worker.md`: local worker profile example.
-
-Committed Claude integration files:
-
-- `.claude/agents/awl-worker.md`
-- `.claude/skills/awl-dispatch/SKILL.md`
-
-`.claude/settings.local.json` exists but is ignored by `.gitignore`; it was not
-needed for this structure map.
-
-Local-only integration noted by `HANDOFF_TO_GPD.md`:
-
-- `.mcp.json` may exist locally and is gitignored.
-- Active MCP users need rebuilt `target/release/awl` after source changes.
-
-## Configuration and Runtime State
-
-User config:
-
-- Default path: `~/.config/awl/config.json`.
-- Overrides: `AWL_CONFIG_PATH`, `AWL_CONFIG_DIR`.
-- Config fields in `src/config.rs`: `base_url`, `agent_model`,
-  `implementation_model`, `verification_model`, `sessions_dir`, `mcp_config`.
-
-Runtime directories:
-
-- Dispatch logs: `~/.config/awl/dispatches/*.jsonl` by default.
-- Agent sessions: `~/.config/awl/sessions/` by default.
-- Experiment results: `experiments/results/` (gitignored).
-- Experiment sandboxes: `experiments/sandbox/` (gitignored).
-- Build artifacts: `target/` (gitignored).
-
-Environment variables:
-
-- `OLLAMA_BASE_URL`: explicit OpenAI-compatible Ollama endpoint.
-- `OLLAMA_HOST`: Ollama host shorthand.
-- `AWL_AGENT_MODEL`: L1 model override.
-- `AWL_IMPLEMENTATION_MODEL`: L2 model override.
-- `AWL_VERIFICATION_MODEL`: L3 model override.
-- `AWL_SESSIONS_DIR`: session log directory override.
-- `AWL_MCP_CONFIG`: MCP config path override.
-- `AWL_CONFIG_PATH`: full config file path override.
-- `AWL_CONFIG_DIR`: config directory root override.
-- `AWL_ENABLE_MCP_AGENT`: exposes `awl_agent` over MCP when set to `1`,
-  `true`, `yes`, or `on`.
-- `AWL_BIN`: experiment harness binary override.
-- `AWL_LEVEL`: experiment harness model level override.
-- `AWL_MODEL_OVERRIDE`: documented as pending in research artifacts but not
-  implemented in `experiments/run_awl_arm.sh`.
+## Directory Purposes
+
+**`src/`:**
+- Purpose: all compiled Rust code for `awl`.
+- Key entry point: `src/main.rs`.
+- Main modules:
+  - `src/agent.rs`: long-running phased agent loop.
+  - `src/dispatch.rs`: bounded local worker dispatch with optional apply/verify rollback.
+  - `src/tools.rs`: tool registry and built-in tools.
+  - `src/mcp_server.rs`: stdio MCP server.
+  - `src/mcp_client.rs`: MCP client for proxying external tools into the agent.
+  - `src/repomap.rs`: tree-sitter symbol scan and graph ranking.
+  - `src/hashline.rs`: content-hashed line editing.
+  - `src/safety.rs`: workspace path and shell-command validation.
+  - `src/config.rs`, `src/defaults.rs`, `src/init.rs`, `src/doctor.rs`: configuration and health checks.
+  - `src/session.rs`, `src/phases.rs`, `src/llm_io.rs`, `src/plan.rs`: state, phase control, LLM I/O helpers, and planning.
+
+**`scripts/`:**
+- `scripts/install.sh`: release-binary installer with platform detection and checksum verification.
+- `scripts/dispatch_eval.sh`: local dispatch smoke/evaluation cases for non-apply, apply success, and rollback.
+- `scripts/dispatch_cost_report.py`: JSONL dispatch-log summary and paid-token avoidance estimate.
+
+**`experiments/`:**
+- `experiments/run_awl_arm.sh`: runs the local-Awl arm across task directories.
+- `experiments/tally.py`: compares Awl records against a manually populated frontier baseline CSV.
+- `experiments/tasks/*/task.json`: dispatch task specs.
+- `experiments/tasks/*/setup.sh`: idempotent sandbox/test fixture creation.
+- `experiments/sandbox/`: generated task workspaces.
+- `experiments/results/`: generated JSON/JSONL/CSV experiment outputs.
+
+**`examples/`:**
+- `examples/codex-config.toml`: Codex MCP server config example.
+- `examples/claude-code.mcp.json`: Claude Code MCP server config example.
+- `examples/awl-worker.md`: delegation-agent guidance for using Awl from a frontier host.
+
+**`.github/`:**
+- `.github/workflows/ci.yml`: Rust formatting, clippy, tests, dispatch cost-report check, optional dispatch eval, cargo package dry run.
+- `.github/workflows/release.yml`: tagged-release binary builds for Linux x86_64, macOS x86_64, and macOS arm64.
+- Issue templates, PR template, CODEOWNERS, and Dependabot config.
+
+## File Organization and Naming
+
+- Rust modules are flat under `src/` and are imported from `src/main.rs` using one file per module.
+- CLI subcommands mostly correspond to module names: `dispatch`, `hashline`, `repomap`, `plan`, `agent`, `init`, `config`, `serve`, `doctor`, and `sessions`.
+- Experiment tasks use numbered directory names such as `experiments/tasks/01_string_helper/`, each containing `task.json` and `setup.sh`.
+- Generated experiment sandboxes/results mirror task IDs under `experiments/sandbox/<id>/` and `experiments/results/`.
+- Dispatch/session logs are stored outside the repo by default under the Awl config directory, not in source control.
 
 ## Input and Output Formats
 
-### Dispatch stdin / MCP input
+| Format | Used For | Files / Modules |
+| --- | --- | --- |
+| JSON | CLI stdin task specs, config, MCP JSON-RPC payloads, model response envelopes, experiment task specs/results | `src/dispatch.rs`, `src/plan.rs`, `src/mcp_server.rs`, `src/config.rs`, `experiments/tasks/*/task.json` |
+| JSONL | Session transcripts and dispatch attempt/event logs | `src/session.rs`, `src/dispatch.rs`, `experiments/results/awl_arm.jsonl` |
+| TOML | Rust package manifest and Codex MCP example | `Cargo.toml`, `examples/codex-config.toml` |
+| YAML | GitHub Actions and issue templates | `.github/workflows/*.yml`, `.github/ISSUE_TEMPLATE/*.yml` |
+| Shell | Install, experiment setup/run, local dispatch evaluation | `scripts/*.sh`, `experiments/**/*.sh`, `vault.sh` |
+| Markdown | User docs, reports, examples, research maps | `README.md`, `examples/awl-worker.md`, `GPD/research-map/*.md` |
+| CSV | Manual frontier-baseline input for experiment tally | `experiments/results/baseline.csv` when created |
 
-The dispatch JSON shape is defined by `TaskSpec` in `src/dispatch.rs`:
+No HDF5, NetCDF, NumPy arrays, Parquet, binary simulation checkpoints, or physics data files were found in the source scan.
 
-```json
-{
-  "task": "description of what to do",
-  "context": "optional inline context",
-  "constraints": ["optional hard constraints"],
-  "target_path": "optional/file/to/write",
-  "target_files": ["optional files in scope"],
-  "context_paths": ["files Awl should read locally"],
-  "verify_command": "optional command for apply mode",
-  "apply": true,
-  "max_attempts": 1,
-  "max_return_chars": 4000,
-  "auto_repomap": true,
-  "repomap_focus": ["optional focus files"],
-  "repomap_budget": 1200
-}
-```
+## Dependency Graph Between Scripts and Modules
 
-CLI flags in `src/main.rs` can override or supplement selected fields:
-`--level`, `--apply`, `--verify`, `--target-path`, `--max-attempts`,
-`--max-return-chars`, `--auto-repomap`, `--repomap-focus`, and
-`--repomap-budget`.
+**Rust CLI path:**
 
-### Model response contract
+- `src/main.rs` parses subcommands and calls module-level runners.
+- `dispatch` -> `src/dispatch.rs` -> `src/defaults.rs`, `src/config.rs`, `src/llm_io.rs`, `src/repomap.rs`, `src/safety.rs`.
+- `agent` -> `src/agent.rs` -> `src/tools.rs`, `src/phases.rs`, `src/session.rs`, `src/mcp_client.rs`, `src/defaults.rs`.
+- `serve` -> `src/mcp_server.rs` -> `src/dispatch.rs`, `src/repomap.rs`, `src/hashline.rs`, optional `src/agent.rs`.
+- `repomap` -> `src/repomap.rs` -> tree-sitter parsers, `petgraph`, `src/safety.rs`.
+- `hashline` -> `src/hashline.rs` -> `src/safety.rs`.
+- `doctor` -> `src/doctor.rs` -> `src/config.rs`, `src/defaults.rs`, `src/session.rs`, `src/mcp_client.rs`.
 
-The local model must produce:
+**Experiment path:**
 
-```json
-{
-  "status": "ok",
-  "code": "complete generated source",
-  "explanation": "brief explanation",
-  "files_modified": ["intended/path"]
-}
-```
+- `experiments/run_awl_arm.sh` discovers `experiments/tasks/*/`, runs each `setup.sh`, extracts the `dispatch` object from `task.json`, then calls `awl dispatch --apply --auto-repomap`.
+- `experiments/tasks/*/setup.sh` creates files under `experiments/sandbox/<id>/` and writes Python unittest fixtures.
+- `experiments/tally.py` reads `experiments/results/awl_arm.jsonl` and optional `experiments/results/baseline.csv`.
+- `scripts/dispatch_cost_report.py` reads Awl dispatch JSONL logs from the configured dispatch-log directory.
 
-`status` may be only `ok` or `error`. The schema is enforced by
-`dispatch_response_format()` and `validate_response()` in `src/dispatch.rs`.
+## Build and Execution
 
-### Awl dispatch result
+**Build system:** Cargo only. No Makefile, `pyproject.toml`, `requirements.txt`, CMake, Meson, or notebook build system was found.
 
-Apply mode returns operational fields including:
-
-- `status`
-- `summary`
-- `files_changed`
-- `checks_run`
-- `checks_passed`
-- `attempts`
-- `usage`
-- `open_issues`
-- `code`
-- `explanation`
-- `files_modified`
-- `telemetry`
-
-Non-apply mode preserves generated `code` subject to truncation, moves model
-claims to `files_intended`, and sets trusted `files_changed` /
-`files_modified` to empty arrays.
-
-### Dispatch telemetry JSONL
-
-Each line in `~/.config/awl/dispatches/<dispatch_id>.jsonl` is a JSON object
-with an `event` field. Important events include:
-
-- `dispatch_start`
-- `model_selected`
-- `repomap_injected`
-- `model_response_valid`
-- `model_response_invalid_json`
-- `model_response_invalid_schema`
-- `format_retries_exhausted`
-- `file_written`
-- `verify_passed`
-- `verify_failed`
-- `verify_command_error`
-- `preflight_failed`
-- `preflight_unresolved_imports`
-- `model_status_error`
-- `missing_code`
-
-### Experiment outputs
-
-`experiments/results/awl_arm.jsonl` records one JSON object per task:
-
-- `task_id`
-- `exit_code`
-- `status`
-- `checks_passed`
-- `attempts`
-- `files_changed`
-- `open_issues`
-- `wall_ms`
-- `model_ms`
-- `prompt_tokens`
-- `completion_tokens`
-- `total_tokens`
-- `dispatch_id`
-- `model`
-
-`experiments/results/baseline.csv` is expected but missing. Its documented
-columns are `task_id,frontier_tokens,frontier_pass,wall_ms`.
-
-## Build, Test, and Verification Commands
-
-Local development commands from `README.md` and CI:
+Common commands documented or implied by CI:
 
 ```bash
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
+cargo build --release
 cargo package --locked --no-verify --list
-python3 scripts/dispatch_cost_report.py --logs-dir target/no-dispatches
 ```
 
-Build and run:
+User/runtime commands documented in `README.md`:
 
 ```bash
-cargo build --release
-./target/release/awl --version
-cargo run --quiet -- dispatch --level 2
-cargo run --quiet -- repomap --path . --budget 4096
-cargo run --quiet -- doctor
+awl init --profile lite --no-check
+awl doctor
+awl agent --task "..."
+awl dispatch --level 2
+awl plan --level 2
+awl repomap --path . --budget 4096
+awl hashline read src/main.rs
+awl serve
 ```
 
 Experiment commands:
 
 ```bash
-./experiments/run_awl_arm.sh
-AWL_BIN=target/release/awl ./experiments/run_awl_arm.sh
-AWL_LEVEL=3 ./experiments/run_awl_arm.sh
-./experiments/tally.py
-python3 scripts/dispatch_cost_report.py --logs-dir target/no-dispatches --json
-```
-
-Optional local dispatch smoke test:
-
-```bash
 scripts/dispatch_eval.sh
+scripts/dispatch_cost_report.py --days 7 --avg-frontier-direct-tokens 6000 --frontier-cost-per-mtok 15
+./experiments/run_awl_arm.sh
+./experiments/tally.py
 ```
 
-Do not infer experiment success from these commands alone. Step 1 requires
-expanded tasks, a 7B and 14B sweep after model override exists, manual
-frontier-baseline data, and tally output.
+## Job Submission and Deployment
 
-## CI and Repository Policy
+- No Slurm, PBS, Kubernetes, Docker Compose, Terraform, or HPC job submission scripts were found.
+- Release deployment is GitHub Actions based: `.github/workflows/release.yml` builds target-specific binaries, packages tarballs, writes SHA-256 checksum files, and publishes a GitHub release.
+- `scripts/install.sh` downloads release tarballs and installs `awl` into `${BIN_DIR:-$HOME/.local/bin}`.
 
-`.github/workflows/ci.yml` runs on pushes to `main`, pull requests, and manual
-dispatch. Matrix OS targets are `ubuntu-latest` and `macos-latest`.
+## Generated and Non-Source Areas
 
-CI steps:
+- `target/` is Cargo/build output and contains generated local eval artifacts; it should not be treated as source.
+- `experiments/sandbox/` and `experiments/results/` are generated by experiment scripts.
+- `GPD/research-map/` is generated research-map output. At scan time, only the output directory existed; previous tracked map files appeared deleted in `git status`.
 
-1. Checkout.
-2. Install stable Rust with `rustfmt` and `clippy`.
-3. Cache Rust dependencies.
-4. `cargo fmt --check`.
-5. `cargo clippy --all-targets -- -D warnings`.
-6. `cargo test`.
-7. `python3 scripts/dispatch_cost_report.py --logs-dir target/no-dispatches`.
-8. Optional `scripts/dispatch_eval.sh` when `AWL_RUN_DISPATCH_EVAL=1` and
-   Ollama is installed.
-9. `cargo package --locked --no-verify --list` on Ubuntu only.
+## Missing or Absent Project Artifacts
 
-`HANDOFF_TO_GPD.md` records branch protection constraints:
+- No project contract file at `GPD/state.json`.
+- No Jupyter notebooks.
+- No Julia, C, C++, or Fortran source.
+- No physics derivation source, LaTeX manuscript, BibTeX database, or stable knowledge anchor in the active registry.
+- No numerical solver configuration, data pipeline manifest, or scientific input deck.
 
-- Never push directly to `main`.
-- PR flow required.
-- `enforce_admins: true`.
-- Required checks: `checks (ubuntu-latest)` and `checks (macos-latest)`.
-- Do not weaken `.github/workflows/ci.yml` lint gates.
+---
 
-## Gitignore and Generated Surfaces
-
-`.gitignore` excludes:
-
-- `/target/`
-- editor/OS files
-- `.vscode/`, `.idea/`
-- `.claude/*` except `.claude/agents/**` and `.claude/skills/**`
-- `.codex/`
-- `.agents/`
-- `.mcp.json`
-- backup/orig files
-- `experiments/sandbox/`
-- `experiments/results/`
-
-Because `experiments/results/` is gitignored, the local partial Step 1 data is
-present in this workspace but may not exist after clone or on another machine.
-Research claims based on it should cite `REPORT_DISPATCH_RELIABILITY.md` and
-explicitly state that the raw result files are local generated artifacts.
-
-## Structural Dependency Graph
-
-```text
-Cargo.toml
-  -> src/main.rs
-    -> src/dispatch.rs
-      -> src/defaults.rs
-        -> src/config.rs
-      -> src/safety.rs
-      -> src/llm_io.rs
-      -> src/repomap.rs
-      -> ~/.config/awl/dispatches/*.jsonl
-    -> src/mcp_server.rs
-      -> src/dispatch.rs
-      -> src/repomap.rs
-      -> src/hashline.rs
-      -> src/agent.rs (gated)
-    -> src/agent.rs
-      -> src/tools.rs
-      -> src/mcp_client.rs
-      -> src/session.rs
-      -> src/phases.rs
-    -> src/doctor.rs
-      -> src/defaults.rs
-      -> src/config.rs
-      -> src/session.rs
-
-experiments/tasks/*/task.json
-  -> experiments/run_awl_arm.sh
-    -> awl dispatch
-      -> experiments/results/<id>.json
-      -> experiments/results/awl_arm.jsonl
-  -> experiments/tally.py
-    -> experiments/results/baseline.csv
-
-scripts/dispatch_cost_report.py
-  -> ~/.config/awl/dispatches/*.jsonl
-```
-
-## Structure Risks and Gaps
-
-1. `src/dispatch.rs` is large and central. Changes for model override,
-   failure taxonomy, retry policy, and telemetry all touch the same file.
-2. `model` override is missing from every dispatch input layer:
-   `src/dispatch.rs`, `src/main.rs`, `src/mcp_server.rs`, and
-   `experiments/run_awl_arm.sh`.
-3. `experiments/tally.py` and `scripts/dispatch_cost_report.py` use blended
-   cost rates, which conflicts with ANC-005 split-rate accounting.
-4. `experiments/tasks/` has only 3 tasks, all Python. Step 1 needs at least 10
-   mixed tasks including Rust and meaningful `context_paths`.
-5. `experiments/results/baseline.csv` is absent, so the A/B comparison cannot
-   compute savings.
-6. `src/safety.rs`, `src/llm_io.rs`, `src/init.rs`, `src/plan.rs`,
-   `src/session.rs`, `src/mcp_client.rs`, and `src/doctor.rs` have no local
-   unit tests according to `GPD/research-map/VALIDATION.md`; `src/safety.rs`
-   is the most critical gap.
-7. Gitignore excludes local experiment outputs. This is correct for generated
-   data, but it means future mappers must not assume raw Step 1 files are
-   available unless present locally.
-
-## Practical Navigation Guide
-
-For dispatch behavior, start with `src/dispatch.rs`, then inspect
-`src/defaults.rs`, `src/safety.rs`, and `src/repomap.rs`.
-
-For frontier/MCP integration, start with `src/mcp_server.rs`, then compare
-`examples/claude-code.mcp.json`, `examples/codex-config.toml`, and
-`.claude/skills/awl-dispatch/SKILL.md`.
-
-For the experiment, start with `experiments/README.md`, then
-`experiments/run_awl_arm.sh`, `experiments/tally.py`, and
-`experiments/tasks/*/task.json`.
-
-For current research decisions, start with `REPORT_DISPATCH_RELIABILITY.md`;
-then use `HANDOFF_TO_GPD.md` for workflow constraints and
-`GPD/research-map/REFERENCES.md` for anchor IDs.
+*Structure analysis: 2026-05-01*

@@ -1,138 +1,98 @@
 # Reference and Anchor Map
 
-**Analysis Date:** 2026-04-30
+**Analysis Date:** 2026-05-01
 
-> **Adaptation note:** Awl is a software engineering project. "References" here
-> means the project's internal research artifacts, architectural decisions,
-> experiment definitions, and external dependencies that constrain design
-> choices. There is no academic bibliography.
+## Active Reference Context
+
+- Project contract: missing at `GPD/state.json`; not authoritative.
+- Active anchor registry: none confirmed in `state.json.project_contract.references`.
+- Must-read references from intake: none confirmed.
+- Prior outputs and baselines from intake: none confirmed.
+- Stable knowledge documents: none found.
+- Physics literature artifacts: no `.bib`, `.tex`, paper PDFs, notebooks, or literature-review documents were found in the inspected workspace.
 
 ## Active Anchor Registry
 
-| Anchor ID | Anchor | Type | Source / Locator | Why It Matters | Must Surface | Required Action | Carry Forward To |
-|-----------|--------|------|------------------|----------------|--------------|-----------------|------------------|
-| ANC-001 | Product hypothesis | definition | `HANDOFF_TO_GPD.md` line 11 | Defines the project's reason for existing: "bounded local execution measurably saves frontier tokens on net" | yes | test | verification |
-| ANC-002 | Success thresholds | benchmark | `experiments/README.md` "Pass/fail thresholds"; `UPDATED_PROGRESS_REPORT.md` "Initial success criteria" | >= 25-40% token reduction at >= 60-70% Awl pass rate. These are the gates for declaring Step 1 done. | yes | compare | verification |
-| ANC-003 | Dispatch v2 contract | definition | `src/dispatch.rs:258-277` (SYSTEM_PROMPT); `src/dispatch.rs:672-689` (`dispatch_response_format`) | The JSON schema `{status, code, explanation, files_modified}` is the API surface. Changing it is a breaking change requiring user authorization. | yes | use | execution |
-| ANC-004 | Rollback invariant | definition | `src/dispatch.rs:1126-1147` (`capture_snapshot`, `restore_snapshot`); tests at lines 1467-1490 | Snapshot/write/verify/rollback is the mechanism that bounds failure cost. Breaking it destroys the savings thesis. | yes | avoid breaking | execution |
-| ANC-005 | Cost rates (Opus 4.7) | benchmark | `HANDOFF_TO_GPD.md` item 4; `REPORT_DISPATCH_RELIABILITY.md` resolved decisions | $5/MTok input, $25/MTok output. The 5x asymmetry is load-bearing for the cost model. | yes | use | planning |
-| ANC-006 | Step 1 partial results | prior artifact | `REPORT_DISPATCH_RELIABILITY.md` "Step 1 experiment state" | 3 tasks run, 2 passed, 1 failed deterministically. Wasted retry observed. This is the empirical basis for the retry policy change. | yes | compare | verification |
-| ANC-007 | Retry policy decision | definition | `REPORT_DISPATCH_RELIABILITY.md` "Question 2" + "Resolved decisions" | User-confirmed: default max_attempts for apply+verify drops from 2 to 1. No auto-escalation. | yes | use | execution |
-| ANC-008 | Model override decision | definition | `REPORT_DISPATCH_RELIABILITY.md` "Question 1" + "Resolved decisions" | User-confirmed: frontier picks model per-dispatch via new `model` field. Keep L2 default at 7B. | yes | use | execution |
-| ANC-009 | Patch list (5 items) | method | `REPORT_DISPATCH_RELIABILITY.md` "Proposed architectural changes" + `HANDOFF_TO_GPD.md` "What to do first" | The work queue. Items 1-4 must ship before Step 1 resumes. Each is independently shippable. | yes | use | planning |
-| ANC-010 | Branch protection rules | definition | `HANDOFF_TO_GPD.md` "Hard constraints" | Never push to main directly. PRs required. `enforce_admins: true`. Two CI checks required. | yes | avoid breaking | execution |
-| ANC-011 | Tokenizer inflation | benchmark | `HANDOFF_TO_GPD.md` item 4 | Opus 4.7 tokenizer produces ~35% more tokens for same text than prior Claude tokenizers. Real-world spend may rise even at same rate card. | no | read | planning |
-| ANC-012 | Pre-v2 failure modes | prior artifact | `UPDATED_PROGRESS_REPORT.md` "Reference Baseline" | Catalogs the failures that dispatch v2 was designed to fix: malformed JSON, hallucinated files_modified, no verification, no rollback. Needed context for understanding why the current contract exists. | no | read | planning |
+| Anchor ID | Anchor | Type | Source / Locator | Why It Matters | Contract Subject IDs | Must Surface | Required Action | Carry Forward To |
+|---|---|---|---|---|---|---|---|---|
+| `contract-missing-state-json` | Missing project contract | context_gap | `GPD/state.json` absent; `GPD/state.json.lock` present | Prevents treating any project-contract reference registry as authoritative |  | yes | avoid | planning,verification |
+| `awl-readme-core-loop` | Awl README | background/method | `README.md` | Defines the local-first CLI, five-phase agent loop, model profiles, MCP integration, dispatch behavior, and quality gates |  | yes | read,use,cite | planning,writing |
+| `handoff-gpd-awl-map` | GPD handoff | prior artifact | `HANDOFF_TO_GPD.md` | Provides the current mission, file map, constraints, work queue, Step 1 status, and stabilized facts |  | yes | read,use | planning,execution,verification |
+| `report-dispatch-reliability` | Dispatch reliability report | prior artifact/benchmark | `REPORT_DISPATCH_RELIABILITY.md` | Latest research artifact: records L2 7B failure, retry-policy decision, model-override decision, patch list, and Step 1 continuation plan |  | yes | read,use,compare,cite | planning,execution,verification,writing |
+| `updated-progress-report` | Prior progress report | prior artifact/background | `UPDATED_PROGRESS_REPORT.md` | Summarizes completed implementation against the original token-savings plan and defines readiness and residual risks |  | yes | read,use | planning,writing |
+| `experiment-readme` | A/B savings experiment protocol | method/benchmark | `experiments/README.md` | Defines local Awl arm, manual frontier-baseline arm, output files, task constraints, and pass/fail thresholds |  | yes | read,use | execution,verification,writing |
+| `dispatch-core-source` | Dispatch implementation | method | `src/dispatch.rs` | Implements dispatch schema, apply/verify/rollback, retries, response validation, telemetry, and current default retry policy |  | yes | read,use,compare | execution,verification |
+| `defaults-model-map` | Model defaults and tier mapping | method | `src/defaults.rs` | Defines 14B agent, 7B implementation, 3B verification defaults and environment/config precedence |  | yes | read,use | planning,execution |
+| `mcp-server-tool-contract` | MCP tool schema | method | `src/mcp_server.rs` | Defines externally visible tool surface and gating of full `awl_agent` behind `AWL_ENABLE_MCP_AGENT=1` |  | yes | read,use | execution,verification |
+| `repomap-source` | Repository map approximation | method | `src/repomap.rs` | Implements tree-sitter symbol extraction and compact repo context used for grounded dispatch |  | no | read,use | execution |
+| `run-awl-arm-harness` | Local Awl experiment arm | benchmark/method | `experiments/run_awl_arm.sh` | Drives per-task setup, dispatch, telemetry extraction, and `awl_arm.jsonl` generation |  | yes | read,use | execution,verification |
+| `tally-script` | A/B comparison script | benchmark/method | `experiments/tally.py` | Computes per-task and aggregate token savings and pass rates from local and frontier baseline arms |  | yes | read,use,compare | verification,writing |
+| `cost-report-script` | Dispatch cost summary | benchmark/method | `scripts/dispatch_cost_report.py` | Summarizes dispatch logs and estimates paid frontier cost avoided; currently uses blended cost rate |  | no | read,use,compare | verification,writing |
+| `awl-arm-jsonl-partial` | Partial L2 7B local-arm results | benchmark | `experiments/results/awl_arm.jsonl` | Records the only found local experiment data: 3 tasks, 2 passes, 1 repeated failure, token and wall-time counts |  | yes | compare,cite | verification,writing |
+| `result-01-string-helper` | Repeated trailing-newline failure | benchmark | `experiments/results/01_string_helper.json`; task spec `experiments/tasks/01_string_helper/task.json` | Concrete evidence that same-model verify retry can repeat a semantic error and burn extra local tokens |  | yes | compare,cite | planning,verification,writing |
+| `result-02-validate-input` | Passing write-from-scratch task | benchmark | `experiments/results/02_validate_input.json`; task spec `experiments/tasks/02_validate_input/task.json` | Evidence that L2 7B can pass a bounded easy Python generation task with verifier |  | yes | compare,cite | verification,writing |
+| `result-03-fix-off-by-one` | Passing edit-existing task | benchmark | `experiments/results/03_fix_off_by_one.json`; task spec `experiments/tasks/03_fix_off_by_one/task.json` | Evidence that L2 7B can pass a bounded edit-existing task with context-path grounding |  | yes | compare,cite | verification,writing |
+| `awl-worker-agent-guidance` | Frontier delegation guidance | method/prior artifact | `.claude/agents/awl-worker.md`; examples variant `examples/awl-worker.md` | States when to delegate, when not to delegate, and that frontier agent owns final judgment |  | no | read,use | planning,execution |
+| `awl-dispatch-skill-guidance` | Codex/Claude dispatch skill | method/prior artifact | `.agents/skills/awl-dispatch/SKILL.md`; `.claude/skills/awl-dispatch/SKILL.md` | Documents intended usage pattern for `awl_dispatch` as a bounded worker, not a planner |  | no | read,use | planning,execution |
+| `ollama-runtime-context` | Ollama runtime dependency | background | `https://ollama.com`; local config references in `README.md` and `src/defaults.rs` | External runtime assumed for local model serving; not a physics or literature reference |  | no | read | planning |
+| `github-repo-locator` | Public repository locator | background | `https://github.com/ev-watson/awl`; `Cargo.toml` repository/homepage | Durable locator for repository identity and release context |  | no | cite | writing |
 
 ## Benchmarks and Comparison Targets
 
-**Primary benchmark: Step 1 A/B savings experiment**
+- Partial Awl local arm, L2 7B-q4:
+  - Source: `experiments/results/awl_arm.jsonl`
+  - Status: present but incomplete.
+  - Observed: 2/3 tasks passed; total local worker tokens across three records were 8601; one task failed after two attempts.
 
-- Definition: `experiments/README.md`
-- Awl arm driver: `experiments/run_awl_arm.sh`
-- Tally script: `experiments/tally.py`
-- Baseline format: `experiments/results/baseline.csv` (manual frontier-only data)
-- Status: 3/10+ tasks run on Awl arm only. No baseline data. Halted pending
-  architectural work.
+- `01_string_helper` trailing-newline failure:
+  - Source: `experiments/results/01_string_helper.json`, `REPORT_DISPATCH_RELIABILITY.md`
+  - Status: failed and used as architectural signal.
+  - Required comparison: rerun under the planned one-attempt default and under 14B-only configuration before claiming model-selection guidance.
 
-**Success thresholds (ANC-002):**
+- Frontier-only baseline:
+  - Source: expected `experiments/results/baseline.csv` per `experiments/README.md`
+  - Status: missing.
+  - Consequence: no inspected artifact proves paid-token savings yet.
 
-| Metric | Threshold | Source |
-|--------|-----------|--------|
-| Aggregate token reduction | >= 25-40% | `experiments/README.md`, `UPDATED_PROGRESS_REPORT.md` |
-| Awl pass rate (usable-as-is) | >= 60-70% | Same |
-
-These thresholds should be re-justified per model configuration (7B-only vs
-14B-only) after the Step 1 sweep completes.
-
-**Empirical reference point (ANC-006):**
-
-| Task | Pass? | Tokens | Wall (ms) | Notes |
-|------|-------|--------|-----------|-------|
-| `01_string_helper` | No | 4264 | 29686 | Capability gap: trailing newline handling |
-| `02_validate_input` | Yes | 2073 | 15431 | Clean first-attempt success |
-| `03_fix_off_by_one` | Yes | 2264 | 17577 | Clean first-attempt success |
-
-Pass rate: 2/3 = 67% (within target range, but n=3 is too small to be
-meaningful). Mean tokens on passing tasks: 2168. No baseline data for
-comparison.
+- 14B-only sweep:
+  - Source: proposed in `REPORT_DISPATCH_RELIABILITY.md`
+  - Status: missing.
+  - Consequence: the 7B-vs-14B tradeoff remains unmeasured locally.
 
 ## Prior Artifacts and Baselines
 
-- `REPORT_DISPATCH_RELIABILITY.md`: The most recent and most authoritative
-  research artifact. Contains the failure analysis from Step 1, the retry
-  policy and model-override decisions, the failure taxonomy proposal, the
-  cost-reporting gap analysis, and the concrete 5-item patch list. Later
-  phases must treat this as the primary source for architectural decisions.
+- `HANDOFF_TO_GPD.md`: Treat as the operational project map for next work, but cross-check against source because some claims can drift.
+- `REPORT_DISPATCH_RELIABILITY.md`: Treat as the current research artifact and work queue. It supersedes the earlier retry-policy implication in source intent, but the source has not yet caught up.
+- `UPDATED_PROGRESS_REPORT.md`: Treat as historical context and motivation; it states readiness for controlled testing, not proof of real-world savings.
+- `experiments/results/awl_arm.jsonl`: Treat as a partial benchmark only. It is not sufficient for final claims because no baseline arm exists.
 
-- `UPDATED_PROGRESS_REPORT.md`: Historical narrative documenting progress
-  against the original corrective plan (`reportreport.txt`). Contains the
-  fuller context for why dispatch v2 exists, what it replaced, and the
-  reasoning behind the experiment design. Not authoritative for current
-  decisions (superseded by the reliability report) but provides essential
-  context for understanding the system.
+## Literature Foundations
 
-- `HANDOFF_TO_GPD.md`: Project map and work queue, written specifically for
-  GPD ingestion. Contains hard constraints, file map, and suggested GPD
-  initialization. Authoritative for constraints and the ordered patch list.
+No academic papers, BibTeX entries, DOI locators, arXiv IDs, or formal literature review artifacts were found. The inspected reference foundation is local project documentation and source code, not an external scholarly literature base.
 
-- `experiments/results/awl_arm.jsonl` (gitignored, local only): Raw JSONL
-  from the partial Step 1 run. 3 records. Present on the originating machine.
+Background technologies and non-scholarly locators found:
 
-- `~/.config/awl/dispatches/1777586666491028000-32287.jsonl` (local only):
-  Per-dispatch telemetry for the failed `01_string_helper` dispatch. Contains
-  the full model request/response cycle including both attempts. Used in the
-  reliability report analysis.
+- Ollama runtime: `https://ollama.com`, referenced by `README.md` and `CONTRIBUTING.md`.
+- Repository identity: `https://github.com/ev-watson/awl`, referenced by `Cargo.toml` and `README.md`.
+- OpenAI-compatible response format is mentioned in project docs/source, but no external specification anchor was found in the workspace.
 
 ## Open Reference Questions
 
-1. **No frontier-baseline data exists.** The manual baseline arm of the A/B
-   experiment has never been run. Without it, token savings cannot be
-   calculated. This is the single most important missing data point.
+- Where are the original `AwlUsageReport.md` and `reportreport.txt` cited by `UPDATED_PROGRESS_REPORT.md`? They were not present in this workspace.
+- Is there an authoritative project contract intended to live at `GPD/state.json`? It is missing here.
+- What frontier baseline token data should populate `experiments/results/baseline.csv`?
+- Which exact 14B model configuration and task matrix will be used for the 14B-only sweep?
+- Should external references be added for OpenAI-compatible structured outputs, MCP protocol semantics, Ollama model-serving behavior, and Qwen model-card details? None are locally anchored yet.
+- The handoff says license is AGPL-3.0, while `Cargo.toml` and `README.md` indicate MIT. This should be resolved before publishing or citing release metadata.
 
-2. **14B model performance is unmeasured.** The 14B model has never been run
-   through the experiment harness. The hypothesis that it catches capability
-   gaps that 7B misses is plausible (by reputation) but unverified.
+## Required Carry-Forward Actions
 
-3. **Tokenizer inflation not empirically quantified for Awl dispatches.**
-   The ~35% inflation figure (ANC-011) is a general claim. The actual
-   inflation for Awl's typical dispatch payloads (JSON, short code snippets)
-   may differ. This affects cost projections.
-
-4. **Blended vs split cost rates.** The current `tally.py` uses a single
-   `--cost-per-mtok` and does not distinguish input from output. The 5x I/O
-   asymmetry (ANC-005) means blended rates systematically misestimate
-   savings. The split-rate implementation (patch item 4) is needed before
-   cost claims are meaningful.
-
-5. **Task pack is undersized.** 3 tasks is insufficient for statistical
-   confidence. The target is >= 10 mixed tasks covering write-from-scratch,
-   edit-existing, and context-paths-required; in both Python and Rust.
-   Currently all 3 tasks are Python write-from-scratch.
-
-## Background Reading
-
-- **Ollama OpenAI-compatible API:** Awl uses the `/v1/chat/completions`
-  endpoint with `response_format: json_schema`. The `strict: true` flag
-  relies on Ollama's structured output support. Model compatibility varies.
-  - Relevant to: `src/dispatch.rs:596-615`, `src/defaults.rs:27-30`
-
-- **Qwen2.5-Coder model family:** Three tiers are used (3B, 7B, 14B). The
-  7B-q4 quantization (4-bit) trades quality for speed/memory. The 14B uses
-  full precision. Empirical quality gap observed on edge-case handling.
-  - Relevant to: `src/defaults.rs:3-5`, `REPORT_DISPATCH_RELIABILITY.md`
-    Question 1 tradeoff table
-
-- **MCP (Model Context Protocol):** Awl serves as a stdio MCP server. The
-  frontier interacts via tool calls (`awl_dispatch`, `awl_repomap`,
-  `awl_health`, etc.). The MCP transport is synchronous/blocking.
-  - Relevant to: `src/mcp_server.rs`, `.claude/skills/awl-dispatch/SKILL.md`
-
-- **Claude Code / Codex integration model:** The frontier assistant is the
-  orchestrator. Awl is a worker. The skill file
-  (`.claude/skills/awl-dispatch/SKILL.md`) defines when to dispatch vs when
-  to handle directly. This is the "demand side" of the dispatch equation.
+- Carry `contract-missing-state-json` into planning and verification; do not infer contract claims or reference requirements from absent state.
+- Carry `report-dispatch-reliability` into planning, execution, verification, and writing as the current work queue.
+- Carry `experiment-readme`, `run-awl-arm-harness`, `tally-script`, and `awl-arm-jsonl-partial` into experiment planning and verification.
+- Carry `result-01-string-helper` into retry-policy and model-selection discussions; it is the concrete disconfirming case for same-model verify retry.
+- Carry the missing baseline and missing 14B sweep as unresolved blockers for any final token-savings conclusion.
 
 ---
 
-_Reference map: 2026-04-30_
+_Reference map: 2026-05-01_
