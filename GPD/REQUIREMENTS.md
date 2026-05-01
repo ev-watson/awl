@@ -120,4 +120,4 @@ Which phases cover which requirements. The roadmapper may revise phase names whi
 ---
 
 _Requirements defined: 2026-05-01_
-_Last updated: 2026-05-01 after approved literature survey requirements gate_
+_Last updated: 2026-05-01 after roadmap traceability validation_
