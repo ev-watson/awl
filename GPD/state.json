@@ -2,7 +2,7 @@
   "project_reference": {
     "project_md_updated": "2026-05-01",
     "core_research_question": "Can Awl's bounded local Ollama dispatch workflow produce defensible frontier-token savings in real Claude/Codex coding sessions without unacceptable pass-rate or reliability regressions?",
-    "current_focus": "Initialize project artifacts from HANDOFF_TO_GPD.md and the approved scoping contract."
+    "current_focus": "Phase 1 ready to plan: reliability and measurement patches."
   },
   "project_contract": {
     "schema_version": 1,
@@ -412,14 +412,14 @@
     }
   },
   "position": {
-    "current_phase": null,
-    "current_phase_name": null,
-    "total_phases": null,
+    "current_phase": "1",
+    "current_phase_name": "Reliability and Measurement Patches",
+    "total_phases": 5,
     "current_plan": null,
     "total_plans_in_phase": null,
-    "status": null,
-    "last_activity": null,
-    "last_activity_desc": null,
+    "status": "ready_to_plan",
+    "last_activity": "Project initialized; roadmap and conventions established.",
+    "last_activity_desc": "Ready for Phase 1 planning.",
     "progress_percent": 0,
     "paused_at": null
   },
@@ -456,7 +456,17 @@
     "covariant_derivative_sign": null,
     "gamma_matrix_convention": null,
     "creation_annihilation_order": null,
-    "custom_conventions": {}
+    "custom_conventions": {
+      "custom:project_type": "software_systems_empirical_measurement_nonphysical",
+      "custom:token_units": "provider_reported_tokens_split_input_output",
+      "custom:cost_units": "usd_per_million_frontier_tokens_split_c_in_c_out",
+      "custom:time_units": "wall_time_seconds_duration_ms_only_for_ms_fields",
+      "custom:model_naming": "exact_ollama_model_tag_plus_fixed_arm_label",
+      "custom:result_schema_naming": "snake_case_json_csv_fields",
+      "custom:failure_category_enum": "format,schema,preflight,verify,timeout,network,model,unknown",
+      "custom:experiment_comparability": "same_frozen_task_ids_and_verifier_semantics_across_arms",
+      "custom:git_ci_evidence": "command_exit_status_date_branch_commit_and_ci_check_name"
+    }
   },
   "propagated_uncertainties": [],
   "pending_todos": [],
@@ -465,16 +475,16 @@
     "schema_version": 1,
     "handoff": {
       "resume_file": null,
-      "stopped_at": null,
+      "stopped_at": "Project initialized; ready for Phase 1 planning.",
       "last_result_id": null,
-      "recorded_at": null,
-      "recorded_by": null
+      "recorded_at": "2026-05-01T21:57:47Z",
+      "recorded_by": "codex"
     },
     "bounded_segment": null,
     "machine": {
-      "recorded_at": null,
-      "hostname": null,
-      "platform": null
+      "recorded_at": "2026-05-01T21:57:47Z",
+      "hostname": "evans-mac.local",
+      "platform": "Darwin"
     }
   },
   "contract_alignment": {
