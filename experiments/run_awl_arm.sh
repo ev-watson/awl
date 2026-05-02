@@ -9,6 +9,7 @@
 #
 # Pre-reqs: Ollama running locally with the configured L2 model pulled.
 # Override the binary with AWL_BIN=/path/to/awl (default: cargo run --quiet --).
+# Override the model for fixed-arm sweeps with AWL_MODEL_OVERRIDE=<ollama-tag>.
 
 set -euo pipefail
 
@@ -17,6 +18,7 @@ cd "$ROOT"
 
 AWL_BIN="${AWL_BIN:-cargo run --quiet --}"
 LEVEL="${AWL_LEVEL:-2}"
+MODEL_OVERRIDE="${AWL_MODEL_OVERRIDE:-}"
 RESULTS_DIR="experiments/results"
 RESULTS_FILE="$RESULTS_DIR/awl_arm.jsonl"
 mkdir -p "$RESULTS_DIR"
@@ -44,9 +46,13 @@ print(json.dumps(spec["dispatch"]))
 ' "$task_json")"
 
   out_file="$RESULTS_DIR/$id.json"
+  dispatch_args=(dispatch --level "$LEVEL" --apply --auto-repomap)
+  if [[ -n "$MODEL_OVERRIDE" ]]; then
+    dispatch_args+=(--model "$MODEL_OVERRIDE")
+  fi
   start="$(now_ms)"
   set +e
-  printf '%s' "$dispatch_input" | $AWL_BIN dispatch --level "$LEVEL" --apply --auto-repomap >"$out_file"
+  printf '%s' "$dispatch_input" | $AWL_BIN "${dispatch_args[@]}" >"$out_file"
   rc=$?
   set -e
   end="$(now_ms)"

@@ -17,3 +17,4 @@
 *.bak
 experiments/sandbox/
 experiments/results/
+GPD/state.json.lock
