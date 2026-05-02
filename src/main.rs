@@ -117,15 +117,14 @@ fn parse_dispatch_options(
     let mut auto_repomap = false;
     let mut repomap_focus: Vec<String> = Vec::new();
     let mut repomap_budget: Option<usize> = None;
+    let mut model: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--level" => {
                 i += 1;
-                let parsed = args
-                    .get(i)
-                    .ok_or("--level requires a value")?
+                let parsed = required_dispatch_arg(args, i, "--level")?
                     .parse()
                     .map_err(|_| "--level must be 2 or 3")?;
                 level = Some(parsed);
@@ -135,21 +134,16 @@ fn parse_dispatch_options(
             }
             "--verify" => {
                 i += 1;
-                verify_command = Some(args.get(i).cloned().ok_or("--verify requires a value")?);
+                verify_command = Some(required_dispatch_arg(args, i, "--verify")?.to_string());
             }
             "--target-path" | "--target-file" => {
                 i += 1;
-                target_path = Some(
-                    args.get(i)
-                        .cloned()
-                        .ok_or("--target-path requires a value")?,
-                );
+                target_path = Some(required_dispatch_arg(args, i, "--target-path")?.to_string());
             }
             "--max-attempts" => {
                 i += 1;
                 max_attempts = Some(
-                    args.get(i)
-                        .ok_or("--max-attempts requires a value")?
+                    required_dispatch_arg(args, i, "--max-attempts")?
                         .parse()
                         .map_err(|_| "--max-attempts must be a positive integer")?,
                 );
@@ -157,8 +151,7 @@ fn parse_dispatch_options(
             "--max-return-chars" => {
                 i += 1;
                 max_return_chars = Some(
-                    args.get(i)
-                        .ok_or("--max-return-chars requires a value")?
+                    required_dispatch_arg(args, i, "--max-return-chars")?
                         .parse()
                         .map_err(|_| "--max-return-chars must be a positive integer")?,
                 );
@@ -168,7 +161,7 @@ fn parse_dispatch_options(
             }
             "--repomap-focus" => {
                 i += 1;
-                let raw = args.get(i).ok_or("--repomap-focus requires a value")?;
+                let raw = required_dispatch_arg(args, i, "--repomap-focus")?;
                 repomap_focus.extend(
                     raw.split(',')
                         .map(str::trim)
@@ -179,11 +172,14 @@ fn parse_dispatch_options(
             "--repomap-budget" => {
                 i += 1;
                 repomap_budget = Some(
-                    args.get(i)
-                        .ok_or("--repomap-budget requires a value")?
+                    required_dispatch_arg(args, i, "--repomap-budget")?
                         .parse()
                         .map_err(|_| "--repomap-budget must be a positive integer")?,
                 );
+            }
+            "--model" => {
+                i += 1;
+                model = Some(required_dispatch_arg(args, i, "--model")?.to_string());
             }
             other => {
                 return Err(format!(
@@ -209,7 +205,18 @@ fn parse_dispatch_options(
     options.auto_repomap = auto_repomap;
     options.repomap_focus = repomap_focus;
     options.repomap_budget = repomap_budget;
+    options.model = model;
     Ok(options)
+}
+
+fn required_dispatch_arg<'a>(
+    args: &'a [String],
+    index: usize,
+    flag: &str,
+) -> Result<&'a str, String> {
+    args.get(index)
+        .map(String::as_str)
+        .ok_or_else(|| format!("{flag} requires a value"))
 }
 
 fn print_usage() {
@@ -226,7 +233,8 @@ SUBCOMMANDS:
                 --apply    Write target_path/target_files[0] locally
                 --verify \"cmd\" Run a check after apply, rollback on failure
                 --target-path <file> Override JSON target_path
-                --max-attempts <n> Local apply/verify attempts, capped at 5
+                --max-attempts <n> Local apply/verify attempts, capped at 5 (default 1)
+                --model <name> Override the Ollama model for this dispatch
                 --auto-repomap Inject a small local repo map into the worker prompt
                 --repomap-focus <files> Comma-separated focus files
                 --repomap-budget <n> Token budget for auto repomap

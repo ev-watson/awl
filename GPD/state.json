@@ -1,0 +1,495 @@
+{
+  "project_reference": {
+    "project_md_updated": "2026-05-01",
+    "core_research_question": "Can Awl's bounded local Ollama dispatch workflow produce defensible frontier-token savings in real Claude/Codex coding sessions without unacceptable pass-rate or reliability regressions?",
+    "current_focus": "Phase 1 ready to plan: reliability and measurement patches."
+  },
+  "project_contract": {
+    "schema_version": 1,
+    "scope": {
+      "question": "Can Awl's bounded local Ollama dispatch workflow produce defensible frontier-token savings in real Claude/Codex coding sessions without unacceptable pass-rate or reliability regressions?",
+      "in_scope": [
+        "Ship the confirmed reliability patches needed before Step 1 measurement resumes: one default apply+verify attempt, per-dispatch model override, failure-category telemetry, and input/output token cost accounting.",
+        "Resume and complete the Step 1 A/B savings experiment using separate 7B-only and 14B-only Awl configurations plus a direct frontier baseline.",
+        "Produce frontier-side guidance for when opting up from 7B to 14B is justified by measured pass rate, failure category, and token-savings evidence."
+      ],
+      "out_of_scope": [
+        "Adding Python preflight, streaming dispatch output, dispatch caching, or per-task local-token ceilings before Step 1 demands them.",
+        "Changing experiment task definitions to make existing tasks easier.",
+        "Replacing the OpenAI-compatible JSON-schema response format without explicit user authorization.",
+        "Relaxing CI, lint, branch-protection, or local-only worker constraints."
+      ],
+      "unresolved_questions": [
+        "What direct-frontier baseline token data should populate experiments/results/baseline.csv?",
+        "Which additional tasks should extend experiments/tasks/ to at least 10 mixed Python/Rust tasks without biasing the benchmark?",
+        "Does 14B improve pass rate enough to justify slower local execution and frontier session overhead?",
+        "Cargo.toml and README.md indicate MIT licensing while HANDOFF_TO_GPD.md says AGPL-3.0; resolve before release or publication metadata is cited."
+      ]
+    },
+    "context_intake": {
+      "must_read_refs": [
+        "ref-handoff",
+        "ref-reliability-report",
+        "ref-progress-report",
+        "ref-experiment-readme"
+      ],
+      "must_include_prior_outputs": [
+        "GPD/research-map/FORMALISM.md",
+        "GPD/research-map/REFERENCES.md",
+        "GPD/research-map/ARCHITECTURE.md",
+        "experiments/results/awl_arm.jsonl",
+        "experiments/results/01_string_helper.json",
+        "experiments/results/02_validate_input.json",
+        "experiments/results/03_fix_off_by_one.json"
+      ],
+      "user_asserted_anchors": [
+        "HANDOFF_TO_GPD.md",
+        "REPORT_DISPATCH_RELIABILITY.md",
+        "experiments/README.md"
+      ],
+      "known_good_baselines": [
+        "experiments/results/awl_arm.jsonl"
+      ],
+      "context_gaps": [
+        "No experiments/results/baseline.csv frontier baseline was found.",
+        "No 14B-only sweep artifact was found.",
+        "Original AwlUsageReport.md and reportreport.txt are cited by UPDATED_PROGRESS_REPORT.md but are not present in this workspace."
+      ],
+      "crucial_inputs": [
+        "Never push directly to main; use branch -> PR -> CI -> merge.",
+        "Never run destructive git operations or skip pre-commit hooks without explicit same-session user confirmation.",
+        "Required CI checks remain checks (ubuntu-latest) and checks (macos-latest).",
+        "All new public Rust functions need at least one unit test.",
+        "Ollama must remain optional at compile time; unreachable Ollama returns structured dispatch errors instead of crashing."
+      ]
+    },
+    "approach_policy": {
+      "formulations": [
+        "Empirical A/B comparison between direct frontier implementation and Awl-assisted bounded local dispatch.",
+        "Reliability-first preparation before Step 1 measurement resumes."
+      ],
+      "allowed_estimator_families": [
+        "Direct per-task frontier input/output token accounting from baseline.csv and Awl telemetry.",
+        "Pass-rate and failure-category aggregation from local dispatch results."
+      ],
+      "forbidden_estimator_families": [
+        "Qualitative impressions of local model quality without frontier baseline comparison.",
+        "Blended single-rate cost accounting after input/output token split is implemented."
+      ],
+      "allowed_fit_families": [
+        "Aggregate and per-configuration comparison of 7B-only and 14B-only results against the same frontier baseline."
+      ],
+      "forbidden_fit_families": [
+        "Post hoc task exclusions that remove hard failures from the benchmark.",
+        "Tuning benchmark tasks to be easier for 7B."
+      ],
+      "stop_and_rethink_conditions": [
+        "CI fails for a non-obvious reason.",
+        "A PR changes the dispatch contract visible to callers or experiment definitions before user confirmation.",
+        "Step 1 cannot produce both a comparable baseline and same-task Awl configurations.",
+        "A result appears to show savings only by counting proxy metrics rather than direct frontier-token reduction."
+      ]
+    },
+    "observables": [
+      {
+        "id": "obs-token-savings",
+        "name": "Frontier-token reduction",
+        "kind": "scalar",
+        "definition": "Aggregate percent reduction in paid frontier input/output tokens for Awl-assisted workflow versus direct frontier baseline across the same task pack.",
+        "regime": null,
+        "units": "percent"
+      },
+      {
+        "id": "obs-awl-pass-rate",
+        "name": "Awl pass rate",
+        "kind": "scalar",
+        "definition": "Fraction of attempted benchmark tasks that pass the task verifier under a given Awl model configuration.",
+        "regime": null,
+        "units": "percent"
+      },
+      {
+        "id": "obs-failure-category",
+        "name": "Dispatch failure category distribution",
+        "kind": "classification",
+        "definition": "Distribution of dispatch failures over format, schema, preflight, verify, timeout, network, and unknown categories.",
+        "regime": null,
+        "units": null
+      },
+      {
+        "id": "obs-cost-split",
+        "name": "Input/output token cost split",
+        "kind": "scalar",
+        "definition": "Cost estimate computed from prompt/input and completion/output tokens using separate per-MTok rates.",
+        "regime": null,
+        "units": null
+      }
+    ],
+    "claims": [
+      {
+        "id": "claim-step1-answer",
+        "statement": "Step 1 will produce either a defensible positive result that at least one Awl configuration achieves at least 25% frontier-token reduction at at least 60% Awl pass rate, or a defensible negative result with documented blockers.",
+        "claim_kind": "result",
+        "observables": [
+          "obs-token-savings",
+          "obs-awl-pass-rate"
+        ],
+        "deliverables": [
+          "deliv-step1-report"
+        ],
+        "acceptance_tests": [
+          "test-step1-threshold"
+        ],
+        "references": [
+          "ref-reliability-report",
+          "ref-experiment-readme",
+          "ref-partial-awl-results"
+        ],
+        "parameters": [],
+        "hypotheses": [],
+        "quantifiers": [],
+        "conclusion_clauses": [],
+        "proof_deliverables": []
+      },
+      {
+        "id": "claim-reliability-prep",
+        "statement": "The architectural patches needed before resuming Step 1 are implemented without weakening dispatch safety, local-only execution, lint, CI, or branch-protection constraints.",
+        "claim_kind": "result",
+        "observables": [
+          "obs-failure-category",
+          "obs-cost-split"
+        ],
+        "deliverables": [
+          "deliv-reliability-patches"
+        ],
+        "acceptance_tests": [
+          "test-reliability-ci"
+        ],
+        "references": [
+          "ref-handoff",
+          "ref-reliability-report"
+        ],
+        "parameters": [],
+        "hypotheses": [],
+        "quantifiers": [],
+        "conclusion_clauses": [],
+        "proof_deliverables": []
+      }
+    ],
+    "deliverables": [
+      {
+        "id": "deliv-reliability-patches",
+        "kind": "code",
+        "path": null,
+        "description": "Independently shippable patches for retry default, per-dispatch model override, failure-category telemetry, and input/output cost accounting.",
+        "must_contain": [
+          "src/dispatch.rs retry default change and tests",
+          "DispatchOptions model override through CLI and MCP schema",
+          "failure_category in apply_result and error_result telemetry",
+          "input/output token cost flags in experiments/tally.py and scripts/dispatch_cost_report.py"
+        ]
+      },
+      {
+        "id": "deliv-step1-report",
+        "kind": "report",
+        "path": "experiments/results/report.md",
+        "description": "Step 1 A/B savings report comparing 7B-only and 14B-only Awl configurations against the direct frontier baseline.",
+        "must_contain": [
+          "same-task baseline comparison",
+          "7B-only aggregate result",
+          "14B-only aggregate result",
+          "input/output token cost accounting",
+          "pass-rate and failure-category discussion",
+          "frontier-side model-selection guidance"
+        ]
+      }
+    ],
+    "acceptance_tests": [
+      {
+        "id": "test-step1-threshold",
+        "subject": "claim-step1-answer",
+        "kind": "benchmark",
+        "procedure": "Run the expanded task pack through 7B-only Awl, 14B-only Awl, and direct frontier baseline, then tally token reduction and pass rate using split input/output token costs.",
+        "pass_condition": "Report identifies at least one configuration with >=25% frontier-token reduction and >=60% Awl pass rate, or documents a negative result with concrete blockers and no unsupported savings claim.",
+        "evidence_required": [
+          "deliv-step1-report",
+          "ref-experiment-readme",
+          "ref-partial-awl-results"
+        ],
+        "automation": "hybrid"
+      },
+      {
+        "id": "test-reliability-ci",
+        "subject": "claim-reliability-prep",
+        "kind": "consistency",
+        "procedure": "For each reliability patch PR, run cargo fmt, cargo test, cargo clippy --all-targets -- -D warnings, and required GitHub CI checks without weakening existing gates.",
+        "pass_condition": "All required local and GitHub CI checks pass, new public Rust functions have tests, and no forbidden dispatch-contract or experiment-definition change proceeds without user confirmation.",
+        "evidence_required": [
+          "deliv-reliability-patches",
+          "ref-handoff",
+          "ref-reliability-report"
+        ],
+        "automation": "hybrid"
+      }
+    ],
+    "references": [
+      {
+        "id": "ref-handoff",
+        "kind": "prior_artifact",
+        "locator": "HANDOFF_TO_GPD.md",
+        "aliases": [
+          "Handoff to GPD: Awl Project"
+        ],
+        "role": "must_consider",
+        "why_it_matters": "User-supplied project map with mission, hard constraints, required reading order, work queue, and stop conditions.",
+        "applies_to": [
+          "claim-reliability-prep"
+        ],
+        "carry_forward_to": [
+          "planning",
+          "execution",
+          "verification"
+        ],
+        "must_surface": true,
+        "required_actions": [
+          "read",
+          "use"
+        ]
+      },
+      {
+        "id": "ref-reliability-report",
+        "kind": "prior_artifact",
+        "locator": "REPORT_DISPATCH_RELIABILITY.md",
+        "aliases": [
+          "Awl Dispatch Reliability Research"
+        ],
+        "role": "benchmark",
+        "why_it_matters": "Current research artifact and patch list; records the deterministic 7B failure, user-confirmed retry/model decisions, and Step 1 continuation plan.",
+        "applies_to": [
+          "claim-step1-answer",
+          "claim-reliability-prep"
+        ],
+        "carry_forward_to": [
+          "planning",
+          "execution",
+          "verification",
+          "writing"
+        ],
+        "must_surface": true,
+        "required_actions": [
+          "read",
+          "use",
+          "compare"
+        ]
+      },
+      {
+        "id": "ref-progress-report",
+        "kind": "prior_artifact",
+        "locator": "UPDATED_PROGRESS_REPORT.md",
+        "aliases": [
+          "Awl Updated Progress Report"
+        ],
+        "role": "background",
+        "why_it_matters": "Historical context for why controlled token-savings measurement is now justified but not yet proven.",
+        "applies_to": [
+          "claim-step1-answer"
+        ],
+        "carry_forward_to": [
+          "planning",
+          "writing"
+        ],
+        "must_surface": true,
+        "required_actions": [
+          "read",
+          "use"
+        ]
+      },
+      {
+        "id": "ref-experiment-readme",
+        "kind": "spec",
+        "locator": "experiments/README.md",
+        "aliases": [
+          "Awl A/B savings experiment protocol"
+        ],
+        "role": "method",
+        "why_it_matters": "Defines the benchmark harness, baseline collection procedure, task constraints, and pass/fail thresholds.",
+        "applies_to": [
+          "claim-step1-answer"
+        ],
+        "carry_forward_to": [
+          "planning",
+          "execution",
+          "verification"
+        ],
+        "must_surface": true,
+        "required_actions": [
+          "read",
+          "use",
+          "compare"
+        ]
+      },
+      {
+        "id": "ref-partial-awl-results",
+        "kind": "dataset",
+        "locator": "experiments/results/awl_arm.jsonl",
+        "aliases": [
+          "partial L2 7B local-arm results"
+        ],
+        "role": "benchmark",
+        "why_it_matters": "Only current benchmark data: 3 attempted tasks, 2 passes, and 01_string_helper deterministic trailing-newline failure after same-model retry.",
+        "applies_to": [
+          "claim-step1-answer"
+        ],
+        "carry_forward_to": [
+          "planning",
+          "verification",
+          "writing"
+        ],
+        "must_surface": true,
+        "required_actions": [
+          "compare",
+          "cite"
+        ]
+      }
+    ],
+    "forbidden_proxies": [
+      {
+        "id": "fp-local-quality-only",
+        "subject": "claim-step1-answer",
+        "proxy": "Treating local model pass rate or qualitative local model quality as evidence of frontier-token savings without direct frontier baseline comparison.",
+        "reason": "The product hypothesis is paid frontier-token savings, not local model quality in isolation."
+      },
+      {
+        "id": "fp-easy-task-tuning",
+        "subject": "claim-step1-answer",
+        "proxy": "Changing benchmark tasks to make 7B pass more often.",
+        "reason": "This would bias the savings experiment and erase the signal from capability gaps."
+      },
+      {
+        "id": "fp-weakened-gates",
+        "subject": "claim-reliability-prep",
+        "proxy": "Suppressing lints, tests, pre-commit hooks, or CI failures to make reliability patches appear complete.",
+        "reason": "Passing safety and verification gates is part of the deliverable, not incidental cleanup."
+      }
+    ],
+    "links": [
+      {
+        "id": "link-step1-report-claim",
+        "source": "claim-step1-answer",
+        "target": "deliv-step1-report",
+        "relation": "supports",
+        "verified_by": [
+          "test-step1-threshold"
+        ]
+      },
+      {
+        "id": "link-patches-claim",
+        "source": "claim-reliability-prep",
+        "target": "deliv-reliability-patches",
+        "relation": "supports",
+        "verified_by": [
+          "test-reliability-ci"
+        ]
+      }
+    ],
+    "uncertainty_markers": {
+      "weakest_anchors": [
+        "No direct frontier baseline data exists yet; experiments/results/baseline.csv must be collected before any savings claim is credible.",
+        "The 14B-only configuration is proposed but unmeasured."
+      ],
+      "unvalidated_assumptions": [
+        "Expanded task pack can represent real bounded coding work without being tuned to either model.",
+        "Frontier token accounting will be comparable across baseline and Awl-assisted sessions."
+      ],
+      "competing_explanations": [
+        "Any observed token savings may come from task selection or accounting differences rather than Awl's local-worker value.",
+        "14B may improve pass rate but lose on total workflow cost or latency."
+      ],
+      "disconfirming_observations": [
+        "No Awl configuration reaches >=25% frontier-token reduction at >=60% pass rate on the same task pack.",
+        "Savings disappear when input and output token costs are split correctly.",
+        "Failures concentrate in verify or schema categories that force expensive frontier recovery."
+      ]
+    }
+  },
+  "position": {
+    "current_phase": "1",
+    "current_phase_name": "Reliability and Measurement Patches",
+    "total_phases": 5,
+    "current_plan": null,
+    "total_plans_in_phase": null,
+    "status": "ready_to_plan",
+    "last_activity": "Project initialized; roadmap and conventions established.",
+    "last_activity_desc": "Ready for Phase 1 planning.",
+    "progress_percent": 0,
+    "paused_at": null
+  },
+  "active_calculations": [],
+  "intermediate_results": [],
+  "open_questions": [
+    "What direct-frontier baseline token data should populate experiments/results/baseline.csv?",
+    "Which additional tasks should extend experiments/tasks/ to at least 10 mixed Python/Rust tasks without biasing the benchmark?",
+    "Does 14B improve pass rate enough to justify slower local execution and frontier session overhead?",
+    "Cargo.toml and README.md indicate MIT licensing while HANDOFF_TO_GPD.md says AGPL-3.0; resolve before release or publication metadata is cited."
+  ],
+  "resolved_questions": [],
+  "performance_metrics": {
+    "rows": []
+  },
+  "decisions": [],
+  "approximations": [],
+  "convention_lock": {
+    "metric_signature": null,
+    "fourier_convention": null,
+    "natural_units": null,
+    "gauge_choice": null,
+    "regularization_scheme": null,
+    "renormalization_scheme": null,
+    "coordinate_system": null,
+    "spin_basis": null,
+    "state_normalization": null,
+    "coupling_convention": null,
+    "index_positioning": null,
+    "time_ordering": null,
+    "commutation_convention": null,
+    "levi_civita_sign": null,
+    "generator_normalization": null,
+    "covariant_derivative_sign": null,
+    "gamma_matrix_convention": null,
+    "creation_annihilation_order": null,
+    "custom_conventions": {
+      "custom:project_type": "software_systems_empirical_measurement_nonphysical",
+      "custom:token_units": "provider_reported_tokens_split_input_output",
+      "custom:cost_units": "usd_per_million_frontier_tokens_split_c_in_c_out",
+      "custom:time_units": "wall_time_seconds_duration_ms_only_for_ms_fields",
+      "custom:model_naming": "exact_ollama_model_tag_plus_fixed_arm_label",
+      "custom:result_schema_naming": "snake_case_json_csv_fields",
+      "custom:failure_category_enum": "format,schema,preflight,verify,timeout,network,model,unknown",
+      "custom:experiment_comparability": "same_frozen_task_ids_and_verifier_semantics_across_arms",
+      "custom:git_ci_evidence": "command_exit_status_date_branch_commit_and_ci_check_name"
+    }
+  },
+  "propagated_uncertainties": [],
+  "pending_todos": [],
+  "blockers": [],
+  "continuation": {
+    "schema_version": 1,
+    "handoff": {
+      "resume_file": null,
+      "stopped_at": "Project initialized; ready for Phase 1 planning.",
+      "last_result_id": null,
+      "recorded_at": "2026-05-01T21:57:47Z",
+      "recorded_by": "codex"
+    },
+    "bounded_segment": null,
+    "machine": {
+      "recorded_at": "2026-05-01T21:57:47Z",
+      "hostname": "evans-mac.local",
+      "platform": "Darwin"
+    }
+  },
+  "contract_alignment": {
+    "confirmed_at": "2026-05-02T05:04:42.465944+00:00",
+    "confirmed_contract_hash": "sha256:c91fe44583409735601062145b9ed2aeb18526b8e01bef5e89f696a7a9fb7316",
+    "confirmed_context_hash": "sha256:36e3435b382a4c0012e29b4d807f92662289d5d4702fbbdbaaf2a5da3b1029ec"
+  }
+}

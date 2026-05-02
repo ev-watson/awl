@@ -69,7 +69,8 @@ fn server_tool_definitions() -> Vec<Value> {
                     "max_return_chars": {"type": "integer", "description": "Maximum characters of generated code or verifier output returned to the host"},
                     "auto_repomap": {"type": "boolean", "description": "When true, inject a small local repository map into the worker prompt"},
                     "repomap_focus": {"type": "array", "items": {"type": "string"}, "description": "Optional focus files for auto_repomap"},
-                    "repomap_budget": {"type": "integer", "description": "Token budget for auto_repomap"}
+                    "repomap_budget": {"type": "integer", "description": "Token budget for auto_repomap"},
+                    "model": {"type": "string", "description": "Override the model for this dispatch (e.g. qwen2.5-coder:14b). When omitted, uses the configured model for the given level."}
                 },
                 "required": ["level", "task"]
             }
@@ -246,6 +247,7 @@ fn execute_dispatch(args: &Value) -> Result<String, String> {
         .unwrap_or(false);
     let repomap_focus = optional_string_array(args, "repomap_focus")?;
     let repomap_budget = optional_usize(args, "repomap_budget")?;
+    let model = optional_string(args, "model");
     let input = json!({
         "task": task,
         "context": context,
@@ -270,6 +272,7 @@ fn execute_dispatch(args: &Value) -> Result<String, String> {
     options.auto_repomap = auto_repomap;
     options.repomap_focus = repomap_focus;
     options.repomap_budget = repomap_budget;
+    options.model = model;
     crate::dispatch::run_capture(&options, &input.to_string()).map_err(|e| e.to_string())
 }
 

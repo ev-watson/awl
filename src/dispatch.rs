@@ -38,6 +38,7 @@ pub struct DispatchOptions {
     pub auto_repomap: bool,
     pub repomap_focus: Vec<String>,
     pub repomap_budget: Option<usize>,
+    pub model: Option<String>,
 }
 
 impl DispatchOptions {
@@ -52,6 +53,7 @@ impl DispatchOptions {
             auto_repomap: false,
             repomap_focus: Vec::new(),
             repomap_budget: None,
+            model: None,
         }
     }
 }
@@ -542,7 +544,7 @@ pub fn run_capture(
             "event": "preflight_failed",
             "error": error
         }))?;
-        let mut output = error_result(&error, &[], 0);
+        let mut output = error_result(&error, &[], 0, Some("preflight"));
         add_top_level_telemetry(
             &mut output,
             "",
@@ -570,8 +572,11 @@ pub fn run_capture(
     )?;
     let base_url = defaults::configured_ollama_base_url();
     let url = defaults::ollama_chat_completions_url(&base_url);
-    let model = defaults::configured_model_for_level(options.level)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    let model = match &options.model {
+        Some(m) => m.clone(),
+        None => defaults::configured_model_for_level(options.level)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?,
+    };
     let max_tokens = defaults::max_tokens_for_level(options.level)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
@@ -606,18 +611,12 @@ pub fn run_capture(
                 dispatch_log.append(&json!({
                     "event": "apply_missing_target_path"
                 }))?;
-                let mut output = json!({
-                    "status": "error",
-                    "summary": "apply mode requires target_path or exactly one target_files entry",
-                    "files_changed": [],
-                    "checks_run": [],
-                    "checks_passed": false,
-                    "attempts": 0,
-                    "open_issues": ["missing target path"],
-                    "code": "",
-                    "explanation": "apply mode requires target_path or exactly one target_files entry",
-                    "files_modified": []
-                });
+                let mut output = error_result(
+                    "apply mode requires target_path or exactly one target_files entry",
+                    &["missing target path".to_string()],
+                    0,
+                    Some("preflight"),
+                );
                 add_top_level_telemetry(
                     &mut output,
                     &model_name,
@@ -650,7 +649,23 @@ pub fn run_capture(
             );
             Ok(serde_json::to_string_pretty(&output)?)
         } else {
-            let generated = dispatch_with_retry(&client, &url, initial_request, &dispatch_log).await?;
+            let generated =
+                match dispatch_with_retry(&client, &url, initial_request, &dispatch_log).await {
+                    Ok(generated) => generated,
+                    Err(error) => {
+                        let summary = error.to_string();
+                        let mut output = error_result(&summary, &[], 1, Some("network"));
+                        add_top_level_telemetry(
+                            &mut output,
+                            &model_name,
+                            options.level,
+                            elapsed_ms(started),
+                            &dispatch_log,
+                        );
+                        compact_value_for_return(&mut output, max_return_chars, false);
+                        return Ok(serde_json::to_string_pretty(&output)?);
+                    }
+                };
             let mut output = generated.value;
             if let Some(usage) = generated.usage {
                 output["usage"] = usage;
@@ -740,9 +755,33 @@ async fn run_apply_flow(
     let mut request = initial_request;
     let mut issues = Vec::new();
     let mut usage = Vec::new();
+    let mut last_failure_category: Option<&'static str> = None;
 
     for attempt in 1..=config.max_attempts {
-        let generated = dispatch_with_retry(client, url, request.clone(), dispatch_log).await?;
+        let generated = match dispatch_with_retry(client, url, request.clone(), dispatch_log).await
+        {
+            Ok(generated) => generated,
+            Err(error) => {
+                let summary = error.to_string();
+                issues.push(summary.clone());
+                dispatch_log.append(&json!({
+                    "event": "network_error",
+                    "attempt": attempt,
+                    "error": summary
+                }))?;
+                return Ok(apply_result(
+                    "error",
+                    &summary,
+                    &[],
+                    config.verify_command.as_deref(),
+                    false,
+                    attempt,
+                    &usage,
+                    &issues,
+                    Some("network"),
+                ));
+            }
+        };
         if let Some(last_usage) = generated.usage.clone() {
             usage.push(last_usage);
         }
@@ -759,6 +798,7 @@ async fn run_apply_flow(
                 "attempt": attempt,
                 "summary": summary
             }))?;
+            let failure_category = result_failure_category(&generated.value).unwrap_or("model");
             return Ok(apply_result(
                 "error",
                 summary,
@@ -768,6 +808,7 @@ async fn run_apply_flow(
                 attempt,
                 &usage,
                 &issues,
+                Some(failure_category),
             ));
         }
 
@@ -786,6 +827,7 @@ async fn run_apply_flow(
                 attempt,
                 &usage,
                 &issues,
+                Some("schema"),
             ));
         };
 
@@ -814,6 +856,7 @@ async fn run_apply_flow(
                     attempt,
                     &usage,
                     &issues,
+                    Some("preflight"),
                 ));
             }
 
@@ -864,6 +907,7 @@ async fn run_apply_flow(
                         attempt,
                         &usage,
                         &issues,
+                        Some("verify"),
                     ));
                 }
             };
@@ -888,10 +932,13 @@ async fn run_apply_flow(
                     attempt,
                     &usage,
                     &[],
+                    None,
                 ));
             }
 
             restore_snapshot(snapshot)?;
+            let failure_category = verify_failure_category(&check.output);
+            last_failure_category = Some(failure_category);
             dispatch_log.append(&json!({
                 "event": "verify_failed",
                 "attempt": attempt,
@@ -940,6 +987,7 @@ async fn run_apply_flow(
                 attempt,
                 &usage,
                 &[],
+                None,
             ));
         }
     }
@@ -953,6 +1001,7 @@ async fn run_apply_flow(
         config.max_attempts,
         &usage,
         &issues,
+        Some(last_failure_category.unwrap_or("verify")),
     ))
 }
 
@@ -1039,7 +1088,8 @@ async fn dispatch_with_retry(
             FORMAT_RETRIES + 1,
             last_error
         ),
-        "files_modified": []
+        "files_modified": [],
+        "failure_category": "format"
     });
     dispatch_log.append(&json!({
         "event": "format_retries_exhausted",
@@ -1108,7 +1158,8 @@ fn effective_target_path(cli_target_path: Option<&str>, spec: &TaskSpec) -> Opti
 }
 
 fn effective_max_attempts(raw: Option<usize>, apply: bool, has_verify: bool) -> usize {
-    let default = if apply && has_verify { 2 } else { 1 };
+    let _ = (apply, has_verify);
+    let default = 1;
     raw.unwrap_or(default).clamp(1, 5)
 }
 
@@ -1218,6 +1269,7 @@ fn apply_result(
     attempts: usize,
     usage: &[Value],
     open_issues: &[String],
+    failure_category: Option<&str>,
 ) -> Value {
     let checks_run = verify_command
         .map(|command| vec![command.to_string()])
@@ -1231,6 +1283,7 @@ fn apply_result(
         "checks_passed": checks_passed,
         "attempts": attempts,
         "usage": usage,
+        "failure_category": failure_category,
         "open_issues": compact_issues,
         "code": "",
         "explanation": truncate(summary, DEFAULT_MAX_RETURN_CHARS),
@@ -1238,7 +1291,12 @@ fn apply_result(
     })
 }
 
-fn error_result(summary: &str, open_issues: &[String], attempts: usize) -> Value {
+fn error_result(
+    summary: &str,
+    open_issues: &[String],
+    attempts: usize,
+    failure_category: Option<&str>,
+) -> Value {
     let issues = if open_issues.is_empty() {
         vec![summary.to_string()]
     } else {
@@ -1252,6 +1310,7 @@ fn error_result(summary: &str, open_issues: &[String], attempts: usize) -> Value
         "checks_passed": false,
         "attempts": attempts,
         "usage": [],
+        "failure_category": failure_category,
         "open_issues": compact_issues(&issues, DEFAULT_FAILURE_ISSUE_CHARS),
         "code": "",
         "explanation": truncate(summary, DEFAULT_MAX_RETURN_CHARS),
@@ -1270,6 +1329,15 @@ fn normalize_non_apply_output(output: &mut Value) {
     output["checks_run"] = json!([]);
     output["checks_passed"] = json!(false);
     output["attempts"] = json!(1);
+    output["failure_category"] = if status(output) == Some("ok") {
+        json!(null)
+    } else {
+        output
+            .get("failure_category")
+            .cloned()
+            .filter(|value| !value.is_null())
+            .unwrap_or_else(|| json!("unknown"))
+    };
     output["open_issues"] = if status(output) == Some("ok") {
         json!([])
     } else {
@@ -1283,6 +1351,28 @@ fn normalize_non_apply_output(output: &mut Value) {
     };
     // Keep files_modified as a trusted compatibility alias: actual files changed by Awl.
     output["files_modified"] = json!([]);
+}
+
+fn result_failure_category(value: &Value) -> Option<&'static str> {
+    match value.get("failure_category").and_then(Value::as_str) {
+        Some("format") => Some("format"),
+        Some("schema") => Some("schema"),
+        Some("preflight") => Some("preflight"),
+        Some("verify") => Some("verify"),
+        Some("timeout") => Some("timeout"),
+        Some("network") => Some("network"),
+        Some("model") => Some("model"),
+        Some("unknown") => Some("unknown"),
+        _ => None,
+    }
+}
+
+fn verify_failure_category(output: &str) -> &'static str {
+    if output.to_ascii_lowercase().contains("timed out") {
+        "timeout"
+    } else {
+        "verify"
+    }
 }
 
 fn add_top_level_telemetry(
@@ -1596,5 +1686,106 @@ mod tests {
         let code = "use crate::foo::A;\nuse crate::bar::B;\nuse std::fs;\n";
         let unresolved = unresolved_crate_imports("src/x.rs", code, &known);
         assert!(unresolved.is_empty());
+    }
+
+    #[test]
+    fn test_effective_max_attempts_default_one() {
+        assert_eq!(effective_max_attempts(None, true, true), 1);
+    }
+
+    #[test]
+    fn test_effective_max_attempts_override_two() {
+        assert_eq!(effective_max_attempts(Some(2), true, true), 2);
+    }
+
+    #[test]
+    fn test_effective_max_attempts_no_apply() {
+        assert_eq!(effective_max_attempts(None, false, false), 1);
+    }
+
+    #[test]
+    fn test_effective_max_attempts_clamp_max() {
+        assert_eq!(effective_max_attempts(Some(6), true, true), 5);
+    }
+
+    #[test]
+    fn test_effective_max_attempts_clamp_min() {
+        assert_eq!(effective_max_attempts(Some(0), true, true), 1);
+    }
+
+    #[test]
+    fn test_dispatch_options_model_default_none() {
+        assert!(DispatchOptions::new(2).model.is_none());
+    }
+
+    #[test]
+    fn test_apply_result_includes_failure_category() {
+        let output = apply_result(
+            "error",
+            "verification failed",
+            &[],
+            Some("cargo test"),
+            false,
+            1,
+            &[],
+            &["failed".to_string()],
+            Some("verify"),
+        );
+
+        assert_eq!(output["failure_category"], json!("verify"));
+    }
+
+    #[test]
+    fn test_error_result_includes_failure_category() {
+        let output = error_result("network unavailable", &[], 1, Some("network"));
+
+        assert_eq!(output["failure_category"], json!("network"));
+    }
+
+    #[test]
+    fn test_apply_result_success_null_category() {
+        let output = apply_result("ok", "done", &[], None, true, 1, &[], &[], None);
+
+        assert!(output["failure_category"].is_null());
+    }
+
+    #[test]
+    fn test_normalize_non_apply_failure_category_fallback() {
+        let mut output = json!({
+            "status": "error",
+            "code": "",
+            "explanation": "failed",
+            "files_modified": []
+        });
+
+        normalize_non_apply_output(&mut output);
+
+        assert_eq!(output["failure_category"], json!("unknown"));
+    }
+
+    #[test]
+    fn test_verify_timeout_category() {
+        assert_eq!(
+            verify_failure_category("verify command timed out after 120000ms"),
+            "timeout"
+        );
+        assert_eq!(verify_failure_category("tests failed"), "verify");
+    }
+
+    #[test]
+    fn test_result_failure_category_approved_taxonomy() {
+        for category in [
+            "format",
+            "schema",
+            "preflight",
+            "verify",
+            "timeout",
+            "network",
+            "model",
+            "unknown",
+        ] {
+            let value = json!({ "failure_category": category });
+            assert_eq!(result_failure_category(&value), Some(category));
+        }
     }
 }
