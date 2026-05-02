@@ -13,10 +13,12 @@ from typing import Any
 
 
 ERROR_EVENTS = {
+    "network_error",
     "format_retries_exhausted",
     "missing_code",
     "model_status_error",
     "preflight_failed",
+    "preflight_unresolved_imports",
     "verify_command_error",
     "verify_failed",
 }
@@ -62,17 +64,55 @@ def parse_args() -> argparse.Namespace:
         help="Estimated paid frontier tokens per dispatch if no total estimate is known.",
     )
     parser.add_argument(
-        "--frontier-cost-per-mtok",
+        "--frontier-direct-input-tokens",
+        type=int,
+        default=0,
+        help="Estimated frontier input tokens for doing these tasks directly.",
+    )
+    parser.add_argument(
+        "--frontier-direct-output-tokens",
+        type=int,
+        default=0,
+        help="Estimated frontier output tokens for doing these tasks directly.",
+    )
+    parser.add_argument(
+        "--frontier-input-cost-per-mtok",
         type=float,
         default=0.0,
-        help="Blended paid frontier cost per million tokens.",
+        help="Paid frontier input cost per million tokens.",
+    )
+    parser.add_argument(
+        "--frontier-output-cost-per-mtok",
+        type=float,
+        default=0.0,
+        help="Paid frontier output cost per million tokens.",
+    )
+    parser.add_argument(
+        "--frontier-cost-per-mtok",
+        type=float,
+        default=None,
+        help="DEPRECATED: use split input/output cost flags instead.",
     )
     parser.add_argument(
         "--json",
         action="store_true",
         help="Emit machine-readable JSON instead of text.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.frontier_cost_per_mtok is not None:
+        if args.frontier_input_cost_per_mtok or args.frontier_output_cost_per_mtok:
+            parser.error(
+                "--frontier-cost-per-mtok cannot be used together with "
+                "--frontier-input-cost-per-mtok or --frontier-output-cost-per-mtok"
+            )
+        print(
+            "warning: --frontier-cost-per-mtok is deprecated; use split "
+            "input/output cost flags for accurate estimates.",
+            file=sys.stderr,
+        )
+        args.frontier_input_cost_per_mtok = args.frontier_cost_per_mtok
+        args.frontier_output_cost_per_mtok = args.frontier_cost_per_mtok
+    return args
 
 
 def iter_logs(logs_dir: Path, days: float | None) -> list[Path]:
@@ -114,6 +154,14 @@ def usage_tokens(usage: Any) -> tuple[int, int, int]:
     return (prompt, completion, total)
 
 
+def event_failure_category(events: list[dict[str, Any]]) -> str | None:
+    for event in reversed(events):
+        category = event.get("failure_category")
+        if isinstance(category, str) and category:
+            return category
+    return None
+
+
 def summarize_log(path: Path) -> dict[str, Any]:
     events = load_events(path)
     prompt_tokens = 0
@@ -138,6 +186,9 @@ def summarize_log(path: Path) -> dict[str, Any]:
 
     failed = any(name in ERROR_EVENTS for name in event_names)
     succeeded = any(name in SUCCESS_EVENTS for name in event_names) and not failed
+    failure_category = event_failure_category(events)
+    if failed and not failure_category:
+        failure_category = "unknown"
     return {
         "id": path.stem,
         "path": str(path),
@@ -151,6 +202,7 @@ def summarize_log(path: Path) -> dict[str, Any]:
         "total_tokens": total_tokens,
         "succeeded": succeeded,
         "failed": failed,
+        "failure_category": failure_category,
         "events": event_names,
     }
 
@@ -161,9 +213,20 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     frontier_direct_tokens = args.frontier_direct_tokens
     if frontier_direct_tokens == 0 and args.avg_frontier_direct_tokens:
         frontier_direct_tokens = args.avg_frontier_direct_tokens * len(dispatches)
+    frontier_input_tokens = args.frontier_direct_input_tokens
+    frontier_output_tokens = args.frontier_direct_output_tokens
+    if frontier_input_tokens == 0 and frontier_output_tokens == 0 and frontier_direct_tokens:
+        frontier_input_tokens = frontier_direct_tokens
     estimated_cost_avoided = (
-        frontier_direct_tokens / 1_000_000 * args.frontier_cost_per_mtok
+        frontier_input_tokens / 1_000_000 * args.frontier_input_cost_per_mtok
+        + frontier_output_tokens / 1_000_000 * args.frontier_output_cost_per_mtok
     )
+    failure_categories: dict[str, int] = {}
+    for item in dispatches:
+        if not item["failed"]:
+            continue
+        category = item.get("failure_category") or "unknown"
+        failure_categories[category] = failure_categories.get(category, 0) + 1
 
     return {
         "logs_dir": str(args.logs_dir),
@@ -173,8 +236,12 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "apply_count": sum(1 for item in dispatches if item["apply"]),
         "local_worker_tokens": local_tokens,
         "frontier_direct_tokens_estimate": frontier_direct_tokens,
-        "frontier_cost_per_mtok": args.frontier_cost_per_mtok,
+        "frontier_direct_input_tokens_estimate": frontier_input_tokens,
+        "frontier_direct_output_tokens_estimate": frontier_output_tokens,
+        "frontier_input_cost_per_mtok": args.frontier_input_cost_per_mtok,
+        "frontier_output_cost_per_mtok": args.frontier_output_cost_per_mtok,
         "estimated_paid_cost_avoided": round(estimated_cost_avoided, 6),
+        "failure_categories": failure_categories,
         "dispatches": dispatches,
     }
 
@@ -187,8 +254,13 @@ def print_text(report: dict[str, Any]) -> None:
     print(f"apply_dispatches: {report['apply_count']}")
     print(f"local_worker_tokens: {report['local_worker_tokens']}")
     print(f"frontier_direct_tokens_estimate: {report['frontier_direct_tokens_estimate']}")
-    if report["frontier_cost_per_mtok"]:
-        print(f"frontier_cost_per_mtok: {report['frontier_cost_per_mtok']}")
+    if report["failure_categories"]:
+        print("failure_breakdown:")
+        for category, count in sorted(report["failure_categories"].items()):
+            print(f"  {category}: {count}")
+    if report["frontier_input_cost_per_mtok"] or report["frontier_output_cost_per_mtok"]:
+        print(f"frontier_input_cost_per_mtok: {report['frontier_input_cost_per_mtok']}")
+        print(f"frontier_output_cost_per_mtok: {report['frontier_output_cost_per_mtok']}")
         print(f"estimated_paid_cost_avoided: ${report['estimated_paid_cost_avoided']}")
 
 

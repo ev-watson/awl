@@ -65,21 +65,32 @@ def percent_savings(awl: int, baseline: int) -> float | None:
 def render_report(
     awl_records: list[dict[str, Any]],
     baseline: dict[str, dict[str, Any]],
-    cost_per_mtok: float,
+    input_cost_per_mtok: float,
+    output_cost_per_mtok: float,
 ) -> str:
     lines: list[str] = []
-    lines.append("# A/B savings — Awl vs frontier-only baseline\n")
+    lines.append("# A/B savings -- Awl vs frontier-only baseline\n")
 
     # Per-task table.
     lines.append("## Per-task results\n")
-    lines.append(
-        "| task | awl pass | awl tokens | awl wall (ms) | "
+    header = (
+        "| task | awl pass | awl tokens (in/out/total) | awl wall (ms) | "
         "baseline pass | baseline tokens | baseline wall (ms) | "
         "token savings |"
     )
-    lines.append(
-        "|---|---|---|---|---|---|---|---|"
-    )
+    sep = "|---|---|---|---|---|---|---|---|"
+
+    has_cost = input_cost_per_mtok > 0 or output_cost_per_mtok > 0
+    if has_cost:
+        header = (
+            "| task | awl pass | awl tokens (in/out/total) | awl cost | awl wall (ms) | "
+            "baseline pass | baseline tokens | baseline wall (ms) | "
+            "token savings |"
+        )
+        sep = "|---|---|---|---|---|---|---|---|---|"
+
+    lines.append(header)
+    lines.append(sep)
 
     awl_pass_count = 0
     base_pass_count = 0
@@ -87,13 +98,22 @@ def render_report(
     base_total_tokens = 0
     awl_wall_total = 0
     base_wall_total = 0
+    awl_total_cost = 0.0
     counted_savings: list[float] = []
 
     for record in awl_records:
         task_id = record["task_id"]
         awl_pass = bool(record.get("checks_passed"))
+        prompt_tokens = int(record.get("prompt_tokens") or 0)
+        completion_tokens = int(record.get("completion_tokens") or 0)
         awl_tokens = int(record.get("total_tokens") or 0)
         awl_wall = int(record.get("wall_ms") or 0)
+
+        task_cost = (
+            prompt_tokens * input_cost_per_mtok / 1_000_000
+            + completion_tokens * output_cost_per_mtok / 1_000_000
+        )
+        awl_total_cost += task_cost
 
         base = baseline.get(task_id, {})
         base_pass = bool(base.get("frontier_pass", False))
@@ -101,13 +121,21 @@ def render_report(
         base_wall = int(base.get("wall_ms") or 0)
 
         savings = percent_savings(awl_tokens, base_tokens)
-        savings_str = f"{savings:.1f}%" if savings is not None else "—"
+        savings_str = f"{savings:.1f}%" if savings is not None else "--"
 
-        lines.append(
-            f"| {task_id} | {'✓' if awl_pass else '✗'} | {awl_tokens} | {awl_wall} | "
-            f"{'✓' if base_pass else ('—' if not base else '✗')} | "
-            f"{base_tokens or '—'} | {base_wall or '—'} | {savings_str} |"
-        )
+        token_detail = f"{prompt_tokens}/{completion_tokens}/{awl_tokens}"
+        if has_cost:
+            lines.append(
+                f"| {task_id} | {'Y' if awl_pass else 'X'} | {token_detail} | ${task_cost:.6f} | {awl_wall} | "
+                f"{'Y' if base_pass else ('--' if not base else 'X')} | "
+                f"{base_tokens or '--'} | {base_wall or '--'} | {savings_str} |"
+            )
+        else:
+            lines.append(
+                f"| {task_id} | {'Y' if awl_pass else 'X'} | {token_detail} | {awl_wall} | "
+                f"{'Y' if base_pass else ('--' if not base else 'X')} | "
+                f"{base_tokens or '--'} | {base_wall or '--'} | {savings_str} |"
+            )
 
         awl_pass_count += int(awl_pass)
         base_pass_count += int(base_pass)
@@ -139,7 +167,7 @@ def render_report(
         lines.append(
             f"- aggregate token reduction: **{agg_savings:.1f}%**"
             if agg_savings is not None
-            else "- aggregate token reduction: —"
+            else "- aggregate token reduction: --"
         )
     if counted_savings:
         avg = sum(counted_savings) / len(counted_savings)
@@ -147,16 +175,24 @@ def render_report(
             f"- per-task token reduction (passing tasks only, mean): **{avg:.1f}%**"
         )
 
-    if cost_per_mtok > 0 and base_total_tokens:
-        avoided = (base_total_tokens / 1_000_000) * cost_per_mtok
+    if has_cost:
         lines.append(
-            f"- estimated paid cost avoided at ${cost_per_mtok}/Mtok: **${avoided:.4f}**"
+            f"- awl total cost (split-rate: ${input_cost_per_mtok}/MTok in, "
+            f"${output_cost_per_mtok}/MTok out): **${awl_total_cost:.6f}**"
         )
+        if base_total_tokens:
+            # Note: baseline.csv only has total frontier_tokens, not split input/output.
+            # Cannot compute precise baseline cost without split baseline data.
+            # Showing the awl cost and noting the limitation.
+            lines.append(
+                "- baseline cost: *requires split input/output token data in baseline.csv "
+                "for precise comparison*"
+            )
 
     lines.append("")
     lines.append(
         "**Success threshold (per UPDATED_PROGRESS_REPORT.md):** "
-        "≥25–40% paid token reduction, ≥60–70% awl-passing tasks."
+        ">=25-40% paid token reduction, >=60-70% awl-passing tasks."
     )
     return "\n".join(lines) + "\n"
 
@@ -174,12 +210,44 @@ def main() -> int:
         default=Path("experiments/results/baseline.csv"),
     )
     parser.add_argument(
-        "--cost-per-mtok",
+        "--input-cost-per-mtok",
         type=float,
         default=0.0,
-        help="Frontier blended $/Mtok for the avoided-cost line (e.g. 5.0).",
+        help="Frontier input token cost in $/MTok (e.g. 5.0 for Claude Opus 4.7).",
+    )
+    parser.add_argument(
+        "--output-cost-per-mtok",
+        type=float,
+        default=0.0,
+        help="Frontier output token cost in $/MTok (e.g. 25.0 for Claude Opus 4.7).",
+    )
+    parser.add_argument(
+        "--cost-per-mtok",
+        type=float,
+        default=None,
+        help="DEPRECATED: Use --input-cost-per-mtok and --output-cost-per-mtok instead. "
+        "If provided, applies the same blended rate to both input and output tokens.",
     )
     args = parser.parse_args()
+
+    # Handle deprecated --cost-per-mtok flag
+    input_cost = args.input_cost_per_mtok
+    output_cost = args.output_cost_per_mtok
+    if args.cost_per_mtok is not None:
+        if input_cost > 0 or output_cost > 0:
+            print(
+                "error: --cost-per-mtok cannot be used together with "
+                "--input-cost-per-mtok or --output-cost-per-mtok",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            "warning: --cost-per-mtok is deprecated; use --input-cost-per-mtok "
+            "and --output-cost-per-mtok for accurate split-rate costing.",
+            file=sys.stderr,
+        )
+        input_cost = args.cost_per_mtok
+        output_cost = args.cost_per_mtok
 
     awl = load_awl_arm(args.awl)
     if not awl:
@@ -187,7 +255,7 @@ def main() -> int:
         return 1
 
     baseline = load_baseline(args.baseline)
-    print(render_report(awl, baseline, args.cost_per_mtok))
+    print(render_report(awl, baseline, input_cost, output_cost))
     return 0
 
 

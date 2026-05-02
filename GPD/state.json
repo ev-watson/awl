@@ -488,8 +488,8 @@
     }
   },
   "contract_alignment": {
-    "confirmed_at": null,
-    "confirmed_contract_hash": null,
-    "confirmed_context_hash": null
+    "confirmed_at": "2026-05-02T05:04:42.465944+00:00",
+    "confirmed_contract_hash": "sha256:c91fe44583409735601062145b9ed2aeb18526b8e01bef5e89f696a7a9fb7316",
+    "confirmed_context_hash": "sha256:36e3435b382a4c0012e29b4d807f92662289d5d4702fbbdbaaf2a5da3b1029ec"
   }
 }
