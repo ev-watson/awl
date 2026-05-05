@@ -191,8 +191,8 @@ def render_report(
 
     lines.append("")
     lines.append(
-        "**Success threshold (per UPDATED_PROGRESS_REPORT.md):** "
-        ">=25-40% paid token reduction, >=60-70% awl-passing tasks."
+        "**Success threshold:** >=25-40% paid token reduction, "
+        ">=60-70% awl-passing tasks."
     )
     return "\n".join(lines) + "\n"
 
