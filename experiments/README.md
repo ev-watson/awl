@@ -88,8 +88,6 @@ The report prints to stdout as markdown — pipe to a file or a paste buffer.
 
 ## Pass/fail thresholds
 
-Per `UPDATED_PROGRESS_REPORT.md`:
-
 - **Token reduction:** ≥25–40% (aggregate across tasks)
 - **Awl usable-as-is rate:** ≥60–70% (passing tasks ÷ tasks attempted)
 
