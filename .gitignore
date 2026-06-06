@@ -6,10 +6,6 @@
 .vscode/
 .idea/
 .claude/*
-!.claude/agents/
-!.claude/agents/**
-!.claude/skills/
-!.claude/skills/**
 .codex/
 .agents/
 .mcp.json

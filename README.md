@@ -182,21 +182,10 @@ it first.
 
 ### MCP integration
 
-`awl serve` is the stdio MCP server for Claude Code and Codex. Register it with the host client rather than running it manually in a standalone terminal:
-
-```bash
-claude mcp add --transport stdio --scope project awl -- /path/to/awl serve
-codex mcp add awl -- /path/to/awl serve
-```
-
-For a source checkout, build first with `cargo build --release`, then point the MCP client at `target/release/awl`.
-
-For Claude/Codex cost-saving workflows, prefer `awl_dispatch` level 2 or 3 with
-compact `target_path`, `context_paths`, constraints, and `verify_command` fields.
-Keep `awl_agent` for local-only runs or explicit experiments where a second local
-orchestrator is worth the latency. The MCP server hides `awl_agent` by default;
-set `AWL_ENABLE_MCP_AGENT=1` before `awl serve` only when you explicitly want to
-expose the full local agent loop.
+MCP integration is temporarily disabled while Awl is in development. The repo
+does not currently publish Claude/Codex MCP registration examples or agent
+worker skills, and `awl serve` exits unless `AWL_ENABLE_MCP_SERVER=1` is set
+explicitly.
 
 For quick local calibration, run:
 

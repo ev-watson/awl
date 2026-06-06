@@ -394,6 +394,14 @@ fn parse_request(trimmed: &str) -> Result<Value, JsonRpcError> {
 }
 
 pub fn run_server() -> Result<(), Box<dyn std::error::Error>> {
+    if !defaults::mcp_server_enabled() {
+        return Err(format!(
+            "awl MCP server is disabled while this project is in development; set {}=1 to run it explicitly",
+            defaults::ENABLE_MCP_SERVER_ENV
+        )
+        .into());
+    }
+
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
 

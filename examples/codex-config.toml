@@ -1,3 +1,0 @@
-[mcp_servers.awl]
-command = "/usr/local/bin/awl"
-args = ["serve"]

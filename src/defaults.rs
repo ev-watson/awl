@@ -16,6 +16,7 @@ pub const IMPLEMENTATION_MODEL_ENV: &str = "AWL_IMPLEMENTATION_MODEL";
 pub const VERIFICATION_MODEL_ENV: &str = "AWL_VERIFICATION_MODEL";
 pub const OLLAMA_BASE_URL_ENV: &str = "OLLAMA_BASE_URL";
 pub const OLLAMA_HOST_ENV: &str = "OLLAMA_HOST";
+pub const ENABLE_MCP_SERVER_ENV: &str = "AWL_ENABLE_MCP_SERVER";
 pub const ENABLE_MCP_AGENT_ENV: &str = "AWL_ENABLE_MCP_AGENT";
 
 pub fn configured_ollama_base_url() -> String {
@@ -96,6 +97,12 @@ pub fn configured_mcp_config_path() -> Option<PathBuf> {
 
 pub fn mcp_agent_enabled() -> bool {
     std::env::var(ENABLE_MCP_AGENT_ENV)
+        .ok()
+        .is_some_and(|value| matches_enabled(&value))
+}
+
+pub fn mcp_server_enabled() -> bool {
+    std::env::var(ENABLE_MCP_SERVER_ENV)
         .ok()
         .is_some_and(|value| matches_enabled(&value))
 }
